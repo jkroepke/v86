@@ -2193,12 +2193,14 @@ pub fn jit_increase_hotness_and_maybe_compile(
     }
 
     let page = Page::page_of(phys_address);
-    let hotness = unsafe { &mut PAGE_HOTNESS[page.to_u32() as usize] };
-    let known = unsafe { &mut KNOWN_ENTRY_POINTS[known_entry_point_index(phys_address)] };
+    // raw pointers: jit_analyze_and_generate writes to PAGE_HOTNESS, too
+    let hotness = unsafe { std::ptr::addr_of_mut!(PAGE_HOTNESS[page.to_u32() as usize]) };
+    let known =
+        unsafe { std::ptr::addr_of_mut!(KNOWN_ENTRY_POINTS[known_entry_point_index(phys_address)]) };
 
     // Most blocks start at an entry point that is already in the set of its page: then only
     // the hotness changes, and that needs neither the lock nor the maps.
-    if *known != !phys_address {
+    if unsafe { *known } != !phys_address {
         let mut ctx = get_jit_state();
         let entry_points = ctx.entry_points.entry(page).or_insert_with(|| {
             cpu::tlb_set_has_code(page, true);
@@ -2208,19 +2210,20 @@ pub fn jit_increase_hotness_and_maybe_compile(
 
         if !is_near_end_of_page(phys_address) {
             entry_points.insert(phys_address as u16 & 0xFFF);
-            *known = !phys_address;
+            unsafe { *known = !phys_address };
         }
     }
 
-    *hotness += heat;
-    if *hotness >= unsafe { JIT_THRESHOLD } {
+    let new_hotness = unsafe { *hotness } + heat;
+    unsafe { *hotness = new_hotness };
+    if new_hotness >= unsafe { JIT_THRESHOLD } {
         let mut ctx = get_jit_state();
         if ctx.compiling.is_some() {
             return;
         }
         // only try generating if we're in the correct address space
         if cpu::translate_address_read_no_side_effects(virt_address) == Ok(phys_address) {
-            *hotness = 0;
+            unsafe { *hotness = 0 };
             jit_analyze_and_generate(&mut ctx, virt_address, phys_address, cs_offset, state_flags)
         }
         else {
