@@ -26,3 +26,21 @@ Baseline = origin/master cbac223 (build copy: /home/claude/bench/v86/i2base).
 - Browser (bench/web/fresh.html, pw2.cjs): posting one WebAssembly.Module from the page to each
   pod worker: "started" 42-81 ms instead of 100-176 ms, Chromium CPU ~0.4 s less per pod.
   Draft tabernetes patch in scratchpad tab/ (vm.js postStart, bridge.js relay, vmworker.js wasm_fn).
+
+## 18:30 update
+- Interpreter (build i2c): size bit in the loop + blocks end when the eip translation changes
+  (no last_virt_eip check per instruction). callgrind (bench/icg.sh, nginx, JIT off), host
+  instructions per guest instruction: 134.4 -> 127.0 (size bit) -> 121.2 (-9.8 %).
+  Tried and dropped: branch-free modrm displacement (+2 % Ir), modrm fast path as leaf function
+  for flat segments (-0.8 % Ir for +13.5 KB wasm).
+- nasmtests, nasmtests-force-jit, rust-test passed on i2c.
+- JIT_THRESHOLD 200k -> 750k (build i2f). 3-way 500k/750k/1M under load: nginx main 790/800/780,
+  760/770/720, 840/740/790; process 2280/1770/1500, 2280/1540/1420, 2450/1580/1670.
+  goapp main 2200/2040/2230, 2130/2090/2120; process 4750/3470/3590, 4940/3270/3090.
+- tools/pod-bench: PCPU=1 prints process CPU.
+- Tabernetes patch written: /mnt/project-files/v86/tabernetes-share-wasm-module.patch
+  (started 180 -> 70 ms, -0.4 s CPU per pod in headless Chromium).
+
+## Next
+- final A/B (scratchpad final-ab.txt, final-nojit.txt), AGENTS.md, clean commits, rebase,
+  tests again, push master, tools/dist.sh --push.
