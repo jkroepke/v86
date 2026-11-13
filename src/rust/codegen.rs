@@ -695,11 +695,12 @@ fn gen_or_page_cross_bit(ctx: &mut JitContext, address_local: &WasmLocal, bits: 
     if bits == BitSize::BYTE {
         return;
     }
+    // the page number changes by one when the access crosses a page, so bit 12 flips
     ctx.builder.get_local(address_local);
-    ctx.builder.const_i32(0xFFF);
-    ctx.builder.and_i32();
     ctx.builder.const_i32(bits.bytes() as i32 - 1);
     ctx.builder.add_i32();
+    ctx.builder.get_local(address_local);
+    ctx.builder.xor_i32();
     ctx.builder.const_i32(0x1000);
     ctx.builder.and_i32();
     ctx.builder.or_i32();

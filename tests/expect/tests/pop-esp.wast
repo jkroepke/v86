@@ -183,11 +183,11 @@
                             (i32.const 2))))
                       (i32.const 3977))
                     (i32.and
-                      (i32.add
-                        (i32.and
+                      (i32.xor
+                        (i32.add
                           (get_local $l10)
-                          (i32.const 4095))
-                        (i32.const 3))
+                          (i32.const 3))
+                        (get_local $l10))
                       (i32.const 4096)))
                   (i32.const 1)))
               (i32.store8
@@ -231,11 +231,11 @@
                             (i32.const 2))))
                       (i32.const 4011))
                     (i32.and
-                      (i32.add
-                        (i32.and
+                      (i32.xor
+                        (i32.add
                           (get_local $l9)
-                          (i32.const 4095))
-                        (i32.const 3))
+                          (i32.const 3))
+                        (get_local $l9))
                       (i32.const 4096)))
                   (i32.const 1)))
               (i32.store8
