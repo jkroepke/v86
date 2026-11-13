@@ -331,11 +331,16 @@ pub static mut tsc_speed: u64 = 1;
 // used for restoring the state
 pub static mut tsc_offset: u64 = 0;
 
+// Generated code reads this struct (the lookup of indirect jumps in jit.rs):
+// state_table at 0, then wasm_table_index, state_flags and a zero byte as one u32 at 0x2000.
+#[repr(C)]
 pub struct Code {
+    pub state_table: [u16; 0x1000],
     pub wasm_table_index: jit::WasmTableIndex,
     pub state_flags: CachedStateFlags,
-    pub state_table: [u16; 0x1000],
+    pub zero: u8,
 }
+pub const CODE_KEY_OFFSET: u32 = 0x2000;
 
 pub static mut tlb_data: [i32; 0x100000] = [0; 0x100000];
 pub static mut tlb_code: [Option<ptr::NonNull<Code>>; 0x100000] = [None; 0x100000];
@@ -344,6 +349,11 @@ pub static mut valid_tlb_entries: [i32; 10000] = [0; 10000];
 pub static mut valid_tlb_entries_count: i32 = 0;
 
 pub static mut in_jit: bool = false;
+
+/// Set by JIT code that left its module at a memory access that missed the fast path
+/// (codegen::JIT_BAIL): the next cycle must run the interpreter, even when the instruction
+/// starts a compiled block, else the module would be entered and bail again.
+pub static mut jit_bailed: bool = false;
 
 pub enum JitExitReason {
     None,
@@ -3409,7 +3419,7 @@ pub unsafe fn cycle_internal() {
 
             if initial_state_flags == c.state_flags {
                 let state = c.state_table[initial_eip as usize & 0xFFF];
-                if state != u16::MAX {
+                if state != u16::MAX && !jit_bailed {
                     jit_entry = Some((c.wasm_table_index.to_u16(), state));
                 }
                 else {
@@ -3506,10 +3516,13 @@ pub unsafe fn cycle_internal() {
     }
     else {
         *previous_ip = initial_eip;
+        let bailed = jit_bailed;
+        jit_bailed = false;
         let phys_addr = return_on_pagefault!(get_phys_eip());
 
         match tlb_code[(initial_eip as u32 >> 12) as usize] {
             None => {},
+            Some(_) if bailed => {},
             Some(c) => {
                 let c = c.as_ref();
 
@@ -3532,13 +3545,19 @@ pub unsafe fn cycle_internal() {
         let initial_instruction_counter = *instruction_counter;
         jit_run_interpreted(phys_addr);
 
-        jit::jit_increase_hotness_and_maybe_compile(
-            initial_eip,
-            phys_addr,
-            get_seg_cs() as u32,
-            initial_state_flags,
-            *instruction_counter - initial_instruction_counter,
-        );
+        if bailed {
+            // Not a new entry point: the block of the module continues here
+            profiler::stat_increment(stat::JIT_BAIL);
+        }
+        else {
+            jit::jit_increase_hotness_and_maybe_compile(
+                initial_eip,
+                phys_addr,
+                get_seg_cs() as u32,
+                initial_state_flags,
+                *instruction_counter - initial_instruction_counter,
+            );
+        }
 
         profiler::stat_increment_by(
             stat::RUN_INTERPRETED_STEPS,

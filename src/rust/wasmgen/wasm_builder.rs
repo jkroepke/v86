@@ -568,7 +568,7 @@ impl WasmBuilder {
     }
 
     #[must_use = "local allocated but not used"]
-    fn alloc_local(&mut self) -> WasmLocal {
+    pub fn alloc_local(&mut self) -> WasmLocal {
         match self.free_locals_i32.pop() {
             Some(local) => local,
             None => {

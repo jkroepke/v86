@@ -466,6 +466,9 @@ pub struct JitContext<'a> {
     pub start_of_current_instruction: u32,
     pub exit_with_fault_label: Label,
     pub exit_label: Label,
+    /// See codegen::JIT_BAIL: set bail_eip_low_bits_local, then br here
+    pub bail_label: Label,
+    pub bail_eip_low_bits_local: WasmLocal,
     pub current_instruction: Instruction,
     pub previous_instruction: Instruction,
     pub gs_base: Option<WasmLocal>,
@@ -492,7 +495,6 @@ pub fn is_near_end_of_page(address: u32) -> bool {
 }
 
 pub fn jit_find_cache_entry(phys_address: u32, state_flags: CachedStateFlags) -> CachedCode {
-    // TODO: dedup with jit_find_cache_entry_in_page?
     // NOTE: This is currently only used for invariant/missed-entry-point checking
     let ctx = get_jit_state();
 
@@ -519,37 +521,6 @@ pub fn jit_find_cache_entry(phys_address: u32, state_flags: CachedStateFlags) ->
     }
 
     return CachedCode::NONE;
-}
-
-#[no_mangle]
-pub fn jit_find_cache_entry_in_page(
-    virt_address: u32,
-    wasm_table_index: WasmTableIndex,
-    state_flags: u32,
-) -> i32 {
-    // TODO: generate code for this
-    profiler::stat_increment(stat::INDIRECT_JUMP);
-
-    let state_flags = CachedStateFlags::of_u32(state_flags);
-
-    unsafe {
-        match cpu::tlb_code[(virt_address >> 12) as usize] {
-            None => {},
-            Some(c) => {
-                let c = c.as_ref();
-                if state_flags == c.state_flags && wasm_table_index == c.wasm_table_index {
-                    let state = c.state_table[virt_address as usize & 0xFFF];
-                    if state != u16::MAX {
-                        return state.into();
-                    }
-                }
-            },
-        }
-    }
-
-    profiler::stat_increment(stat::INDIRECT_JUMP_NO_ENTRY);
-
-    return -1;
 }
 
 fn jit_find_basic_blocks(
@@ -1421,6 +1392,7 @@ fn update_tlb_code_ctx(ctx: &JitState, virt_page: Page, phys_page: Page) {
                     wasm_table_index: info.wasm_table_index,
                     state_flags: info.state_flags,
                     state_table,
+                    zero: 0,
                 })));
                 cpu::tlb_code[virt_page.to_u32() as usize] = Some(c);
                 c.as_mut()
@@ -1461,7 +1433,10 @@ fn jit_generate_module(
     builder.const_i32(0);
     let instruction_counter = builder.set_new_local();
 
+    // always set before use (wasm locals start as 0)
+    let bail_eip_low_bits_local = builder.alloc_local();
     let exit_label = builder.block_void();
+    let bail_label = builder.block_void();
     let exit_with_fault_label = builder.block_void();
     let main_loop_label = builder.loop_void();
     if unsafe { JIT_USE_LOOP_SAFETY } {
@@ -1487,6 +1462,8 @@ fn jit_generate_module(
         start_of_current_instruction: 0,
         exit_with_fault_label,
         exit_label,
+        bail_label,
+        bail_eip_low_bits_local,
         current_instruction: Instruction::Other,
         previous_instruction: Instruction::Other,
         gs_base: None,
@@ -1643,15 +1620,54 @@ fn jit_generate_module(
                     },
                     BasicBlockType::AbsoluteEip => {
                         // Check if we can stay in this module, if not exit
+                        // Look up the entry in tlb_code inline: a call would make V8 spill
+                        // every live local around it
+                        codegen::gen_profiler_stat_increment(ctx.builder, stat::INDIRECT_JUMP);
                         codegen::gen_get_eip(ctx.builder);
-                        ctx.builder.const_i32(wasm_table_index.to_u16() as i32);
-                        ctx.builder.const_i32(state_flags.to_u32() as i32);
-                        ctx.builder.call_fn3_ret("jit_find_cache_entry_in_page");
-                        ctx.builder.tee_local(target_block);
-                        ctx.builder.const_i32(0);
-                        ctx.builder.ge_i32();
+                        let eip_local = ctx.builder.set_new_local();
+                        ctx.builder.const_i32(-1);
+                        ctx.builder.set_local(target_block);
+                        let miss = ctx.builder.block_void();
+                        // code = tlb_code[eip >> 12]
+                        ctx.builder.get_local(&eip_local);
+                        ctx.builder.const_i32(12);
+                        ctx.builder.shr_u_i32();
+                        ctx.builder.const_i32(2);
+                        ctx.builder.shl_i32();
+                        ctx.builder.load_aligned_i32(&raw const cpu::tlb_code as u32);
+                        let code_local = ctx.builder.tee_new_local();
+                        ctx.builder.eqz_i32();
+                        ctx.builder.br_if(miss);
+                        // same module and state flags
+                        ctx.builder.get_local(&code_local);
+                        ctx.builder.load_aligned_i32(cpu::CODE_KEY_OFFSET);
+                        ctx.builder.const_i32(
+                            wasm_table_index.to_u16() as i32 | (state_flags.to_u32() as i32) << 16,
+                        );
+                        ctx.builder.ne_i32();
+                        ctx.builder.br_if(miss);
+                        // target_block = code.state_table[eip & 0xFFF] (u16::MAX: no entry)
+                        ctx.builder.get_local(&code_local);
+                        ctx.builder.get_local(&eip_local);
+                        ctx.builder.const_i32(0xFFF);
+                        ctx.builder.and_i32();
+                        ctx.builder.const_i32(1);
+                        ctx.builder.shl_i32();
+                        ctx.builder.add_i32();
+                        ctx.builder.load_aligned_u16(0);
+                        ctx.builder.set_local(target_block);
+                        ctx.builder.block_end();
+                        ctx.builder.free_local(code_local);
+                        ctx.builder.free_local(eip_local);
+                        ctx.builder.get_local(target_block);
+                        ctx.builder.const_i32(u16::MAX as i32);
+                        ctx.builder.ltu_i32();
                         // TODO: Could make this unconditional by including exit_label in the main br_table
                         ctx.builder.br_if(main_loop_label);
+                        codegen::gen_profiler_stat_increment(
+                            ctx.builder,
+                            stat::INDIRECT_JUMP_NO_ENTRY,
+                        );
 
                         codegen::gen_debug_track_jit_exit(ctx.builder, block.last_instruction_addr);
                         ctx.builder.br(ctx.exit_label);
@@ -2272,6 +2288,23 @@ fn jit_generate_module(
         ctx.builder.return_();
     }
     {
+        // bail: a memory access missed the fast path, the interpreter runs the instruction
+        ctx.builder.block_end();
+        ctx.builder
+            .const_i32(&raw mut cpu::jit_bailed as i32);
+        ctx.builder.const_i32(1);
+        ctx.builder.store_u8(0);
+        ctx.builder
+            .const_i32(global_pointers::instruction_pointer as i32);
+        codegen::gen_get_eip(ctx.builder);
+        ctx.builder.const_i32(!0xFFF);
+        ctx.builder.and_i32();
+        ctx.builder.get_local(&ctx.bail_eip_low_bits_local);
+        ctx.builder.or_i32();
+        ctx.builder.store_aligned_i32(0);
+        // falls through to exit
+    }
+    {
         // exit
         ctx.builder.block_end();
         codegen::gen_move_registers_from_locals_to_memory(ctx);
@@ -2288,6 +2321,8 @@ fn jit_generate_module(
     }
     ctx.builder
         .free_local(ctx.instruction_counter.unsafe_clone());
+    ctx.builder
+        .free_local(ctx.bail_eip_low_bits_local.unsafe_clone());
 
     ctx.builder.finish();
 
@@ -2847,6 +2882,7 @@ pub unsafe fn set_jit_config(index: u32, value: u32) {
         4 => JIT_THRESHOLD = value,
         5 => codegen::JIT_SIMD = value != 0,
         7 => JIT_COLD_BLOCKS = value != 0,
+        8 => codegen::JIT_BAIL = value != 0,
         _ => dbg_assert!(false),
     }
 }
@@ -2861,6 +2897,7 @@ pub unsafe fn get_jit_config(index: u32) -> u32 {
         4 => JIT_THRESHOLD,
         5 => codegen::JIT_SIMD as u32,
         7 => JIT_COLD_BLOCKS as u32,
+        8 => codegen::JIT_BAIL as u32,
         _ => 0,
     }
 }

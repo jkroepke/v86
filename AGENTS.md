@@ -92,8 +92,11 @@ time goes.
   `WebAssembly.Module` and pass it to every worker (`wasm_fn`); pod-bench
   does not show this, its rounds share the module.
 - spring: ~9G instructions; 486M entries into JIT modules with only ~16
-  instructions each, 473M exits to another page. Profile: 55 % JIT code,
-  15 % main_loop (dispatch into modules), 15 % interpreter.
+  instructions each, 473M exits to another page. perf of the main thread
+  (after the memory access changes below): JIT code 47 %, interpreter
+  26 % (1.2G instructions, mostly pages below the JIT threshold), main_loop
+  14 %. About half of main_loop are cache misses per module entry:
+  `Code.state_table`, the `Code` header and `MODULE_USE`.
 - SSE/MMX is 0.2-0.3 % of the instructions of these workloads and the
   kernel runs none; newer SSE/AVX levels do not help them.
 - Generated wasm: spring compiled ~111 MB of JIT modules in a release
@@ -131,6 +134,31 @@ time goes.
   of memory accesses (~48 bytes each, ~one per 120 bytes of module).
 - Measure process CPU, not only the main thread: `tools/pod-bench`
   reports the main thread; read `/proc/self/stat` for all threads.
+
+## Memory accesses in JIT code (measured 2026-11-13)
+
+- spring does ~4.2G memory accesses through the inline TLB check, and
+  only ~1M miss the fast path (TLB miss, page crossed, dirty bit, page
+  with code, MMIO). perf with jitdump (`node --perf-prof`, `perf inject
+  --jit`) shows each instruction of the JIT code.
+- The fast path test is one compare: `(entry & mask) | page_cross ==
+  TLB_VALID`, where page_cross is bit 12 of `addr ^ (addr + size - 1)`.
+  Two compares joined by `i32.and` made V8 emit setcc/movzx/test chains.
+- A missed fast path leaves the module (bail, `codegen::JIT_BAIL`): the
+  site sets the low bits of eip, a shared block per module sets
+  `cpu::jit_bailed`, and the interpreter runs the rest of the block
+  (without hotness or a new entry point). Before, the module called
+  `safe_*_slow_jit`. A call anywhere makes V8 keep every live local in a
+  stack slot too (all registers are caller-saved): stores of the guest
+  registers at every write were 12.6 % of the JIT samples, now 5 %. ~0.7M
+  bails in spring. `set_jit_config(8, 0)` gives the calls back.
+- Indirect jumps (ret, call through a register) look up `tlb_code`
+  inline instead of calling `jit_find_cache_entry_in_page` (`Code` is
+  `repr(C)`; key at 0x2000).
+- Left: the TLB check is ~13 host instructions per access and ~30 % of
+  the JIT samples; the chain address -> entry -> physical address is on
+  the critical path of every load. Not tried: one check for several
+  accesses with the same base register in a block.
 
 ## Instruction set extensions: what pays (measured 2026-11-13)
 
@@ -233,5 +261,19 @@ time goes.
   nginx 1.16 / 0.71 s (no change: few modules at 750k). Headless
   Chromium, CPU of all browser processes: cpu 29.4 -> 24.4 s (wall per
   round 6.02 -> 5.83 s), nginx 7.18 -> 6.46 s (wall 694 -> 688 ms).
+- Memory accesses in JIT code (2026-11-13, see the section above): one
+  compare for the TLB fast path, a bail to the interpreter instead of
+  calls to `safe_*_slow_jit`, inline lookup of indirect jumps.
+  Against 50b5d0a, main thread / process CPU, medians of alternating runs
+  in Node.js (spring 3 x 1 round, others 4-5 x 2 rounds): spring 75.5 /
+  106.7 -> 59.3 / 76.0 s (wall 80.5 -> 64.2 s), cpu 5.58 / 7.63 -> 4.76 /
+  6.00 s, glibc 5.34 / 8.35 -> 4.76 / 6.72 s, goapp 1.98 / 3.39 -> 1.93 /
+  2.75 s, nginx 0.70 / 1.05 -> 0.67 / 0.98 s. Wasm bytes of the JIT
+  modules: spring 24.1 -> 22.6 MB, cpu 4.8 -> 4.5, glibc 7.4 -> 7.0 MB.
+  Step by step on spring (main / process): one compare 79.1 / 110.3 ->
+  74.6 / 106.5 s; inline lookup of indirect jumps 74.7 -> 73.3 s main;
+  bails 73.3 / 105.6 -> 64.7 / 84.7 s; one bail block per module instead
+  of the code at every site (28.0 -> 22.6 MB) 62.4 / 80.3 -> 61.3 / 78.2 s.
+  v86.wasm 2072984 -> 2074080 bytes.
 
 Work in progress lives on `wip/*` and `codex/*` branches.
