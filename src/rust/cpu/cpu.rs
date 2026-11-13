@@ -3348,8 +3348,23 @@ pub unsafe fn interpreter_loop_next(state: &mut InterpreterLoop) -> Option<u32> 
         }
     }
 
+    record_opstat_interpreted(phys_addr);
     *instruction_pointer = eip + 1;
     Some(*memory::mem8.offset(phys_addr as isize) as u32 | (*is_32 as u32) << 8)
+}
+
+// profiler build: count the opcode of an instruction that the interpreter is about to run
+#[inline(always)]
+unsafe fn record_opstat_interpreted(phys_addr: u32) {
+    if cfg!(feature = "profiler") {
+        let bytes = if phys_addr & 0xFFF <= 0xFFC {
+            memory::read32s(phys_addr) as u32
+        }
+        else {
+            *memory::mem8.offset(phys_addr as isize) as u32
+        };
+        opstats::record_opstat_interpreted(bytes, *cpl == 3);
+    }
 }
 
 #[cold]
@@ -3543,6 +3558,7 @@ unsafe fn jit_run_interpreted(phys_addr: u32) {
     }
 
     jit_block_boundary = 0;
+    record_opstat_interpreted(phys_addr);
     let opcode = *memory::mem8.offset(phys_addr as isize) as u32;
     *instruction_pointer += 1;
     dbg_assert!(*prefixes == 0);
@@ -4769,6 +4785,16 @@ pub unsafe fn get_opstats_buffer(
 #[no_mangle]
 #[cfg(not(feature = "profiler"))]
 pub unsafe fn get_opstats_buffer() -> f64 { 0.0 }
+
+// mode: 0 = jit kernel, 1 = jit user, 2 = interpreter kernel, 3 = interpreter user
+#[no_mangle]
+#[cfg(feature = "profiler")]
+pub unsafe fn get_opstats_mode(mode: u32, index: u32) -> f64 {
+    opstats::opstats_mode_buffer[mode as usize][index as usize] as f64
+}
+#[no_mangle]
+#[cfg(feature = "profiler")]
+pub unsafe fn clear_opstats_mode() { opstats::opstats_mode_buffer = [[0; 8192]; 4]; }
 
 pub fn clear_tlb_code(page: i32) {
     unsafe {

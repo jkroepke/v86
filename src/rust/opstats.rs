@@ -4,6 +4,10 @@ const SIZE: usize = if cfg!(feature = "profiler") { 8192 } else { 0 };
 
 #[allow(non_upper_case_globals)]
 pub static mut opstats_buffer: [u64; SIZE] = [0; SIZE];
+// executed instructions, split by mode: index 0 = jit kernel, 1 = jit user,
+// 2 = interpreter kernel, 3 = interpreter user
+#[allow(non_upper_case_globals)]
+pub static mut opstats_mode_buffer: [[u64; SIZE]; 4] = [[0; SIZE]; 4];
 #[allow(non_upper_case_globals)]
 pub static mut opstats_compiled_buffer: [u64; SIZE] = [0; SIZE];
 #[allow(non_upper_case_globals)]
@@ -136,7 +140,24 @@ pub fn decode(mut instruction: u32) -> Instruction {
     }
 }
 
-pub fn gen_opstats(builder: &mut WasmBuilder, opcode: u32) {
+pub fn record_opstat_interpreted(opcode: u32, user: bool) {
+    if !cfg!(feature = "profiler") {
+        return;
+    }
+    let instruction = decode(opcode);
+    let mode = 2 + user as usize;
+    for prefix in instruction.prefixes {
+        let index = (prefix as u32) << 4;
+        unsafe { opstats_mode_buffer[mode][index as usize] += 1 }
+    }
+    let index = (instruction.is_0f as u32) << 12
+        | (instruction.opcode as u32) << 4
+        | (instruction.is_mem as u32) << 3
+        | instruction.fixed_g as u32;
+    unsafe { opstats_mode_buffer[mode][index as usize] += 1 }
+}
+
+pub fn gen_opstats(builder: &mut WasmBuilder, opcode: u32, user: bool) {
     if !cfg!(feature = "profiler") {
         return;
     }
@@ -147,6 +168,20 @@ pub fn gen_opstats(builder: &mut WasmBuilder, opcode: u32) {
         let index = (prefix as u32) << 4;
         builder.increment_fixed_i64(
             unsafe { &mut opstats_buffer[index as usize] as *mut _ } as u32,
+            1,
+        );
+        builder.increment_fixed_i64(
+            unsafe { &mut opstats_mode_buffer[user as usize][index as usize] as *mut _ } as u32,
+            1,
+        );
+    }
+    {
+        let index = (instruction.is_0f as u32) << 12
+            | (instruction.opcode as u32) << 4
+            | (instruction.is_mem as u32) << 3
+            | instruction.fixed_g as u32;
+        builder.increment_fixed_i64(
+            unsafe { &mut opstats_mode_buffer[user as usize][index as usize] as *mut _ } as u32,
             1,
         );
     }

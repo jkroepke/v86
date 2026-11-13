@@ -2113,7 +2113,7 @@ fn jit_generate_basic_block(ctx: &mut JitContext, block: &BasicBlock) {
         let mut instruction = 0;
         if cfg!(feature = "profiler") {
             instruction = memory::read32s(ctx.cpu.eip) as u32;
-            opstats::gen_opstats(ctx.builder, instruction);
+            opstats::gen_opstats(ctx.builder, instruction, ctx.cpu.cpl3());
             opstats::record_opstat_compiled(instruction);
         }
 
