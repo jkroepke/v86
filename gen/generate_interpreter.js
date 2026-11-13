@@ -27,11 +27,16 @@ assert(
     "Pass --table [interpreter|interpreter0f] or --all to pick which tables to generate"
 );
 
+// How an instruction ends early (after a page fault, for example): the main table is the body of
+// the loop of the interpreter and leaves the block of the instruction, the 0f table is a function
+// for a single instruction and returns
+let exit_instruction = "return";
+
 gen_table();
 
 function wrap_imm_call(imm)
 {
-    return `match ${imm} { Ok(o) => o, Err(()) => return }`;
+    return `match ${imm} { Ok(o) => o, Err(()) => ${exit_instruction} }`;
 }
 
 function gen_read_imm_call(op, size_variant)
@@ -244,7 +249,7 @@ function gen_instruction_body_after_fixed_g(encoding, size)
                 if_blocks: [
                     {
                         condition: encoding.sse ? "!task_switch_test_mmx()" : "!task_switch_test()",
-                        body: ["return;"],
+                        body: [`${exit_instruction};`],
                     }
                 ],
             });
@@ -283,7 +288,7 @@ function gen_instruction_body_after_fixed_g(encoding, size)
             }
             else
             {
-                mem_args = ["match modrm_resolve(modrm_byte) { Ok(a) => a, Err(()) => return }"];
+                mem_args = [`match modrm_resolve(modrm_byte) { Ok(a) => a, Err(()) => ${exit_instruction} }`];
             }
 
             const reg_args = ["modrm_byte & 7"];
@@ -371,6 +376,8 @@ function gen_table()
         }
     }
 
+    exit_instruction = "break 'instruction";
+
     let cases = [];
     for(let opcode = 0; opcode < 0x100; opcode++)
     {
@@ -415,12 +422,23 @@ function gen_table()
             "use crate::cpu::cpu::{after_block_boundary, modrm_resolve, read_modrm_byte};",
             "use crate::cpu::cpu::{read_imm8, read_imm8s, read_imm16, read_imm32s, read_moffs};",
             "use crate::cpu::cpu::{task_switch_test, trigger_ud};",
+            "use crate::cpu::cpu::{interpreter_loop_start, interpreter_loop_next};",
             "use crate::cpu::instructions;",
             "use crate::cpu::global_pointers::{instruction_pointer, prefixes};",
             "use crate::prefix;",
 
-            "pub unsafe fn run(opcode: u32) {",
+            "// Runs the instruction with this opcode and then the instructions that follow it, up to",
+            "// the end of the block (see interpreter_loop_next). The loop is in this function, so an",
+            "// instruction of the interpreter costs no call and no return. Returns how many",
+            "// instructions ran.",
+            "pub unsafe fn run(mut opcode: u32) -> u32 {",
+            "let mut state = interpreter_loop_start();",
+            "loop {",
+            "'instruction: {",
             table,
+            "}",
+            "match interpreter_loop_next(&mut state) { Some(next) => opcode = next, None => return state.count }",
+            "}",
             "}",
         ];
 
@@ -430,6 +448,8 @@ function gen_table()
             rust_ast.print_syntax_tree([].concat(code)).join("\n") + "\n"
         );
     }
+
+    exit_instruction = "return";
 
     const cases0f = [];
     for(let opcode = 0; opcode < 0x100; opcode++)

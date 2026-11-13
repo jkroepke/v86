@@ -212,40 +212,39 @@ pub unsafe fn push32_sreg(i: i32) -> OrPageFault<()> {
     Ok(())
 }
 
-pub unsafe fn pop16() -> OrPageFault<i32> {
-    if *stack_size_32 {
-        pop16_ss32()
-    }
-    else {
-        pop16_ss16()
-    }
+// pop16 and pop32s return the value packed into an i64 (see pack_result in cpu.rs)
+#[inline(always)]
+pub unsafe fn pop16() -> OrPageFault<i32> { unpack_result(pop16_packed()) }
+unsafe fn pop16_packed() -> i64 {
+    pack_result(if *stack_size_32 { pop16_ss32() } else { pop16_ss16() })
 }
+#[inline(always)]
 pub unsafe fn pop16_ss16() -> OrPageFault<i32> {
     let sp = get_seg_ss() + read_reg16(SP);
     let result = safe_read16(sp)?;
     write_reg16(SP, read_reg16(SP) + 2);
     Ok(result)
 }
+#[inline(always)]
 pub unsafe fn pop16_ss32() -> OrPageFault<i32> {
     let esp = get_seg_ss() + read_reg32(ESP);
     let result = safe_read16(esp)?;
     write_reg32(ESP, read_reg32(ESP) + 2);
     Ok(result)
 }
-pub unsafe fn pop32s() -> OrPageFault<i32> {
-    if *stack_size_32 {
-        pop32s_ss32()
-    }
-    else {
-        pop32s_ss16()
-    }
+#[inline(always)]
+pub unsafe fn pop32s() -> OrPageFault<i32> { unpack_result(pop32s_packed()) }
+unsafe fn pop32s_packed() -> i64 {
+    pack_result(if *stack_size_32 { pop32s_ss32() } else { pop32s_ss16() })
 }
+#[inline(always)]
 pub unsafe fn pop32s_ss16() -> OrPageFault<i32> {
     let sp = read_reg16(SP);
     let result = safe_read32s(get_seg_ss() + sp)?;
     write_reg16(SP, sp + 4);
     Ok(result)
 }
+#[inline(always)]
 pub unsafe fn pop32s_ss32() -> OrPageFault<i32> {
     let esp = read_reg32(ESP);
     let result = safe_read32s(get_seg_ss() + esp)?;

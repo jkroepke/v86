@@ -297,7 +297,12 @@ pub const TSC_RATE: f64 = 1_000_000.0;
 
 pub static mut cpuid_level: u32 = 0x16;
 
-pub static mut jit_block_boundary: bool = false;
+// Not zero when the interpreter must leave its loop after the current instruction
+pub static mut jit_block_boundary: u8 = 0;
+// The instruction ended the block (a jump, for example)
+pub const BLOCK_BOUNDARY: u8 = 1;
+// Only one instruction is wanted (the instruction after a prefix)
+pub const BLOCK_SINGLE_INSTRUCTION: u8 = 2;
 
 const TSC_ENABLE_IMPRECISE_BROWSER_WORKAROUND: bool = true;
 
@@ -1898,7 +1903,7 @@ pub unsafe fn do_task_switch(selector: i32, error_code: Option<i32>, source: Tas
     update_state_flags();
 }
 
-pub unsafe fn after_block_boundary() { jit_block_boundary = true; }
+pub unsafe fn after_block_boundary() { jit_block_boundary |= BLOCK_BOUNDARY; }
 
 #[no_mangle]
 pub fn track_jit_exit(phys_addr: u32) {
@@ -3278,7 +3283,82 @@ unsafe fn modrm_resolve_slow(modrm_byte: i32) -> i64 {
     pack_result(if is_asize_32() { resolve_modrm32(modrm_byte) } else { resolve_modrm16(modrm_byte) })
 }
 
-pub unsafe fn run_instruction(opcode: i32) { gen::interpreter::run(opcode as u32) }
+// Runs one instruction: the instruction after a prefix. gen::interpreter::run is a loop, the flag
+// makes it stop after the first instruction. A prefix can follow a prefix, so the flag is put back
+// to what it was and not cleared.
+pub unsafe fn run_instruction(opcode: i32) {
+    let saved = jit_block_boundary & BLOCK_SINGLE_INSTRUCTION;
+    jit_block_boundary |= BLOCK_SINGLE_INSTRUCTION;
+    gen::interpreter::run(opcode as u32);
+    jit_block_boundary = jit_block_boundary & !BLOCK_SINGLE_INSTRUCTION | saved;
+}
+
+pub struct InterpreterLoop {
+    // where the current instruction starts
+    start_eip: i32,
+    // instructions that ran
+    pub count: u32,
+}
+
+#[inline(always)]
+pub unsafe fn interpreter_loop_start() -> InterpreterLoop {
+    // the caller has read the opcode
+    InterpreterLoop {
+        start_eip: *instruction_pointer - 1,
+        count: 0,
+    }
+}
+
+// Called after every instruction of the interpreter: returns the opcode of the next instruction,
+// or None at the end of the block
+#[inline(always)]
+pub unsafe fn interpreter_loop_next(state: &mut InterpreterLoop) -> Option<u32> {
+    dbg_assert!(*prefixes == 0 || jit_block_boundary & BLOCK_SINGLE_INSTRUCTION != 0);
+    state.count += 1;
+    let eip = *instruction_pointer;
+
+    if jit_block_boundary != 0
+        || (state.start_eip ^ eip) as u32 >= 0x1000
+        // Limit the number of iterations, as jumps within the same page are not counted as
+        // block boundaries for the interpreter, but only on the next backwards jump
+        || (state.count >= INTERPRETER_ITERATION_LIMIT && state.start_eip as u32 >= eip as u32)
+    {
+        return None;
+    }
+
+    *previous_ip = eip;
+    if 0 != eip & !0xFFF ^ *last_virt_eip {
+        if !interpreter_loop_translate(eip) {
+            return None;
+        }
+    }
+    let phys_addr = (*eip_phys ^ eip) as u32;
+    dbg_assert!(!memory::in_mapped_range(phys_addr));
+
+    if CHECK_MISSED_ENTRY_POINTS {
+        let entry = jit::jit_find_cache_entry(phys_addr, *state_flags);
+        if entry != jit::CachedCode::NONE {
+            profiler::stat_increment(stat::RUN_INTERPRETED_MISSED_COMPILED_ENTRY_RUN_INTERPRETED);
+        }
+    }
+
+    state.start_eip = eip;
+    *instruction_pointer = eip + 1;
+    Some(*memory::mem8.offset(phys_addr as isize) as u32 | (*is_32 as u32) << 8)
+}
+
+#[cold]
+#[inline(never)]
+unsafe fn interpreter_loop_translate(eip: i32) -> bool {
+    match translate_address_fetch(eip) {
+        Ok(phys) => {
+            *eip_phys = (phys ^ eip as u32) as i32;
+            *last_virt_eip = eip & !0xFFF;
+            true
+        },
+        Err(()) => false,
+    }
+}
 pub unsafe fn run_instruction0f_16(opcode: i32) { gen::interpreter0f::run(opcode as u32) }
 pub unsafe fn run_instruction0f_32(opcode: i32) { gen::interpreter0f::run(opcode as u32 | 0x100) }
 
@@ -3446,50 +3526,30 @@ pub unsafe fn get_phys_eip() -> OrPageFault<u32> {
     return Ok(phys_addr);
 }
 
-unsafe fn jit_run_interpreted(mut phys_addr: u32) {
+unsafe fn jit_run_interpreted(phys_addr: u32) {
     profiler::stat_increment(stat::RUN_INTERPRETED);
     dbg_assert!(!memory::in_mapped_range(phys_addr));
 
-    jit_block_boundary = false;
-    let mut i = 0;
-
-    loop {
-        if CHECK_MISSED_ENTRY_POINTS {
-            let entry = jit::jit_find_cache_entry(phys_addr, *state_flags);
-            if entry != jit::CachedCode::NONE {
-                profiler::stat_increment(
-                    stat::RUN_INTERPRETED_MISSED_COMPILED_ENTRY_RUN_INTERPRETED,
-                );
-            }
+    if CHECK_MISSED_ENTRY_POINTS {
+        let entry = jit::jit_find_cache_entry(phys_addr, *state_flags);
+        if entry != jit::CachedCode::NONE {
+            profiler::stat_increment(stat::RUN_INTERPRETED_MISSED_COMPILED_ENTRY_RUN_INTERPRETED);
         }
-
-        i += 1;
-        let start_eip = *instruction_pointer;
-        let opcode = *memory::mem8.offset(phys_addr as isize) as i32;
-        *instruction_pointer += 1;
-        dbg_assert!(*prefixes == 0);
-        run_instruction(opcode | (*is_32 as i32) << 8);
-        dbg_assert!(*prefixes == 0);
-
-        if jit_block_boundary
-            || Page::page_of(start_eip as u32) != Page::page_of(*instruction_pointer as u32)
-                // Limit the number of iterations, as jumps within the same page are not counted as
-                // block boundaries for the interpreter, but only on the next backwards jump
-            || (i >= INTERPRETER_ITERATION_LIMIT
-                && (start_eip as u32) >= (*instruction_pointer as u32))
-        {
-            break;
-        }
-
-        *previous_ip = *instruction_pointer;
-        phys_addr = return_on_pagefault!(get_phys_eip()) as u32;
     }
+
+    jit_block_boundary = 0;
+    let opcode = *memory::mem8.offset(phys_addr as isize) as u32;
+    *instruction_pointer += 1;
+    dbg_assert!(*prefixes == 0);
+    // the loop over the instructions of the block is in the generated function
+    let count = gen::interpreter::run(opcode | (*is_32 as u32) << 8);
+    dbg_assert!(*prefixes == 0);
 
     if cfg!(debug_assertions) {
         debug_last_jump = LastJump::Interpreted { phys_addr };
     }
 
-    *instruction_counter += i;
+    *instruction_counter += count;
 }
 
 #[no_mangle]
@@ -3685,9 +3745,48 @@ pub unsafe fn virt_boundary_write32(low: u32, high: u32, value: i32) {
     memory::write8(high as u32, value >> 24);
 }
 
+// Fast path of the interpreter for memory reads: the address of the data when the TLB entry is
+// valid for this privilege level, the page is normal memory and the read does not cross a page.
+// Like the code that the JIT generates (see gen_safe_read in codegen.rs).
+#[inline(always)]
+unsafe fn tlb_fast_read(addr: i32, size: i32) -> Option<*const u8> {
+    let entry = tlb_data[(addr as u32 >> 12) as usize];
+    let mask = TLB_VALID | TLB_IN_MAPPED_RANGE | if *cpl == 3 { TLB_NO_USER } else { 0 };
+    if entry & mask == TLB_VALID && addr & 0xFFF <= 0x1000 - size {
+        Some((entry & !0xFFF ^ addr) as u32 as *const u8)
+    }
+    else {
+        None
+    }
+}
+
+// The same for writes: the page must also be writable and have no code of the JIT
+#[inline(always)]
+unsafe fn tlb_fast_write(addr: i32, size: i32) -> Option<*mut u8> {
+    let entry = tlb_data[(addr as u32 >> 12) as usize];
+    let mask = TLB_VALID
+        | TLB_IN_MAPPED_RANGE
+        | TLB_READONLY
+        | TLB_HAS_CODE
+        | if *cpl == 3 { TLB_NO_USER } else { 0 };
+    if entry & mask == TLB_VALID && addr & 0xFFF <= 0x1000 - size {
+        Some((entry & !0xFFF ^ addr) as u32 as *mut u8)
+    }
+    else {
+        None
+    }
+}
+
 #[inline(always)]
 pub unsafe fn safe_read8(addr: i32) -> OrPageFault<i32> { unpack_result(safe_read8_packed(addr)) }
 unsafe fn safe_read8_packed(addr: i32) -> i64 {
+    if let Some(p) = tlb_fast_read(addr, 1) {
+        return *p as i64;
+    }
+    safe_read8_slow(addr)
+}
+#[inline(never)]
+unsafe fn safe_read8_slow(addr: i32) -> i64 {
     match translate_address_read(addr) {
         Ok(phys_addr) => memory::read8(phys_addr) as u32 as i64,
         Err(()) => PACKED_ERR,
@@ -3696,22 +3795,24 @@ unsafe fn safe_read8_packed(addr: i32) -> i64 {
 
 #[inline(always)]
 pub unsafe fn safe_read16(addr: i32) -> OrPageFault<i32> { unpack_result(safe_read16_packed(addr)) }
-#[cold]
-#[inline(never)]
-unsafe fn safe_read16_boundary(addr: i32) -> i64 {
-    let low = safe_read8_packed(addr);
-    if low < 0 {
-        return low;
-    }
-    let high = safe_read8_packed(addr + 1);
-    if high < 0 {
-        return high;
-    }
-    low | high << 8
-}
 unsafe fn safe_read16_packed(addr: i32) -> i64 {
+    if let Some(p) = tlb_fast_read(addr, 2) {
+        return ptr::read_unaligned(p as *const u16) as i64;
+    }
+    safe_read16_slow(addr)
+}
+#[inline(never)]
+unsafe fn safe_read16_slow(addr: i32) -> i64 {
     if addr & 0xFFF == 0xFFF {
-        return safe_read16_boundary(addr);
+        let low = safe_read8_slow(addr);
+        if low < 0 {
+            return low;
+        }
+        let high = safe_read8_slow(addr + 1);
+        if high < 0 {
+            return high;
+        }
+        return low | high << 8;
     }
     match translate_address_read(addr) {
         Ok(phys_addr) => memory::read16(phys_addr) as u32 as i64,
@@ -3721,22 +3822,24 @@ unsafe fn safe_read16_packed(addr: i32) -> i64 {
 
 #[inline(always)]
 pub unsafe fn safe_read32s(addr: i32) -> OrPageFault<i32> { unpack_result(safe_read32s_packed(addr)) }
-#[cold]
-#[inline(never)]
-unsafe fn safe_read32s_boundary(addr: i32) -> i64 {
-    let low = safe_read16_packed(addr);
-    if low < 0 {
-        return low;
-    }
-    let high = safe_read16_packed(addr + 2);
-    if high < 0 {
-        return high;
-    }
-    low | high << 16
-}
 unsafe fn safe_read32s_packed(addr: i32) -> i64 {
+    if let Some(p) = tlb_fast_read(addr, 4) {
+        return ptr::read_unaligned(p as *const u32) as i64;
+    }
+    safe_read32s_slow(addr)
+}
+#[inline(never)]
+unsafe fn safe_read32s_slow(addr: i32) -> i64 {
     if addr & 0xFFF >= 0xFFD {
-        return safe_read32s_boundary(addr);
+        let low = safe_read16_slow(addr);
+        if low < 0 {
+            return low;
+        }
+        let high = safe_read16_slow(addr + 2);
+        if high < 0 {
+            return high;
+        }
+        return low | high << 16;
     }
     match translate_address_read(addr) {
         Ok(phys_addr) => memory::read32s(phys_addr) as u32 as i64,
@@ -4126,6 +4229,14 @@ pub unsafe fn writable_or_pagefault_jit(
 }
 
 pub unsafe fn safe_write8(addr: i32, value: i32) -> OrPageFault<()> {
+    if let Some(p) = tlb_fast_write(addr, 1) {
+        ptr::write_unaligned(p as *mut u8, value as u8);
+        return Ok(());
+    }
+    safe_write8_slow(addr, value)
+}
+#[inline(never)]
+unsafe fn safe_write8_slow(addr: i32, value: i32) -> OrPageFault<()> {
     let (phys_addr, can_skip_dirty_page) = translate_address_write_and_can_skip_dirty(addr)?;
     if memory::in_mapped_range(phys_addr) {
         memory::mmap_write8(phys_addr, value);
@@ -4143,6 +4254,14 @@ pub unsafe fn safe_write8(addr: i32, value: i32) -> OrPageFault<()> {
 }
 
 pub unsafe fn safe_write16(addr: i32, value: i32) -> OrPageFault<()> {
+    if let Some(p) = tlb_fast_write(addr, 2) {
+        ptr::write_unaligned(p as *mut u16, value as u16);
+        return Ok(());
+    }
+    safe_write16_slow(addr, value)
+}
+#[inline(never)]
+unsafe fn safe_write16_slow(addr: i32, value: i32) -> OrPageFault<()> {
     let (phys_addr, can_skip_dirty_page) = translate_address_write_and_can_skip_dirty(addr)?;
     dbg_assert!(value >= 0 && value < 0x10000);
     if addr & 0xFFF == 0xFFF {
@@ -4164,6 +4283,14 @@ pub unsafe fn safe_write16(addr: i32, value: i32) -> OrPageFault<()> {
 }
 
 pub unsafe fn safe_write32(addr: i32, value: i32) -> OrPageFault<()> {
+    if let Some(p) = tlb_fast_write(addr, 4) {
+        ptr::write_unaligned(p as *mut i32, value as i32);
+        return Ok(());
+    }
+    safe_write32_slow(addr, value)
+}
+#[inline(never)]
+unsafe fn safe_write32_slow(addr: i32, value: i32) -> OrPageFault<()> {
     let (phys_addr, can_skip_dirty_page) = translate_address_write_and_can_skip_dirty(addr)?;
     if addr & 0xFFF > 0x1000 - 4 {
         virt_boundary_write32(
@@ -4474,14 +4601,10 @@ pub unsafe fn task_switch_test_mmx_jit(eip_offset_in_page: i32) {
     }
 }
 
+#[inline(always)]
 pub unsafe fn read_moffs() -> OrPageFault<i32> {
     // read 2 or 4 byte from ip, depending on address size attribute
-    if is_asize_32() {
-        read_imm32s()
-    }
-    else {
-        read_imm16()
-    }
+    unpack_result(if is_asize_32() { read_imm32s_packed() } else { read_imm16_packed() })
 }
 
 #[no_mangle]
