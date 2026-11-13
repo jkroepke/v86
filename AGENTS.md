@@ -89,5 +89,15 @@ time goes.
   lock and two maps per interpreted block. CPU time of the main thread,
   paired runs: nginx -22 % (JIT off -31 %), goapp -24 %, cpu -3 % (noise).
   v86.wasm 2012667 -> 2057741 bytes.
+- 9p (2026-11-13): replies to Tlopen, Tread, Treaddir and Tclunk go out
+  in the same call when the data is at hand (no promise, the guest does
+  not go idle and wake up); Rread data is written straight into the guest
+  buffers (`get_write_views`), not through `replybuffer`; a storage may
+  offer `readInto(key, offset, dest, size)` for a synchronous read into
+  guest memory (-1: use `read`). A directory is listed once per open, not
+  for every request. 9p, virtio and port I/O in JS are only 2-6 % of the
+  main thread (profiles of nginx, goapp, glibc), so a port to Rust is not
+  worth it. nginx -7 % CPU (-9 % with `readInto`), glibc -5.5 % guest
+  instructions.
 
 Work in progress lives on `wip/*` and `codex/*` branches.
