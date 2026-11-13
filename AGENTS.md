@@ -274,6 +274,6 @@ time goes.
   74.6 / 106.5 s; inline lookup of indirect jumps 74.7 -> 73.3 s main;
   bails 73.3 / 105.6 -> 64.7 / 84.7 s; one bail block per module instead
   of the code at every site (28.0 -> 22.6 MB) 62.4 / 80.3 -> 61.3 / 78.2 s.
-  v86.wasm 2072984 -> 2074080 bytes.
+  v86.wasm 2072984 -> 2075009 bytes.
 
 Work in progress lives on `wip/*` and `codex/*` branches.
