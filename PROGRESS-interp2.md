@@ -44,3 +44,8 @@ Baseline = origin/master cbac223 (build copy: /home/claude/bench/v86/i2base).
 ## Next
 - final A/B (scratchpad final-ab.txt, final-nojit.txt), AGENTS.md, clean commits, rebase,
   tests again, push master, tools/dist.sh --push.
+
+## Done (18:48)
+Merged to master as 5abbf86..61a717b (clean commits, branch interp2-final), dist 829b3ee
+(0.5.79-fork.61a717b16788). Nothing left on this branch. Open: bump the commit in tabernetes,
+apply /mnt/project-files/v86/tabernetes-share-wasm-module.patch there.
