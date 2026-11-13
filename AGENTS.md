@@ -96,8 +96,14 @@ calls, interrupts, port I/O), `IDLE_MS=` what an idle pod costs.
   instructions each, 473M exits to another page. perf of the main thread
   (after the memory access changes below): JIT code 47 %, interpreter
   26 % (1.2G instructions, mostly pages below the JIT threshold), main_loop
-  14 %. About half of main_loop are cache misses per module entry:
-  `Code.state_table`, the `Code` header and `MODULE_USE`.
+  14 %. perf puts about half of main_loop on the loads after
+  `Code.state_table`, the `Code` header and `MODULE_USE`, but they are not
+  the cost: a direct-mapped jump cache keyed by eip (4096 x 16 bytes, 96 %
+  hits) moved the samples onto its own line and left main_loop at 14 % and
+  spring unchanged (3 pairs: 60.6 / 59.1 -> 61.6 / 60.9 s main). Without
+  the `MODULE_USE` counter at all: 60.8 -> 59.6 s (noise), so it is not
+  worth a change either. The cost per entry (~17 ns) is the call into the
+  module and its return, not the lookup.
 - SSE/MMX is 0.2-0.3 % of the instructions of these workloads and the
   kernel runs none; newer SSE/AVX levels do not help them.
 - Generated wasm: spring compiled ~111 MB of JIT modules in a release
@@ -215,10 +221,22 @@ Counters of `src/rust/gueststat.rs` (`GSTAT=` of `tools/pod-bench`), Linux
 - Indirect jumps (ret, call through a register) look up `tlb_code`
   inline instead of calling `jit_find_cache_entry_in_page` (`Code` is
   `repr(C)`; key at 0x2000).
-- Left: the TLB check is ~13 host instructions per access and ~30 % of
-  the JIT samples; the chain address -> entry -> physical address is on
-  the critical path of every load. Not tried: one check for several
-  accesses with the same base register in a block.
+- The TLB check is ~13 host instructions per access and ~30 % of the
+  JIT samples, but it is not on the critical path: the CPU runs it beside
+  the work. Tried (branch `wip/jit3`, 2026-11-13): one check for several
+  accesses with the same address registers in a basic block (the first
+  access keeps its address in wasm memory in a local; a later one with
+  another displacement only checks that it stays in that page, the
+  builder counts writes to the register locals, calls and blocks end a
+  group, push/pop move the group of ESP). It skipped the check for 33 %
+  of the accesses of cpu and glibc and 25 % of goapp; callgrind of cpu:
+  -2.2 % host instructions, JIT bytes -6 %; CPU time: cpu 5050 -> 5000,
+  glibc 4958 -> 4890 ms (noise). An access outside the page of its group
+  must bail (a full check at every site makes the modules 6 % larger than
+  without groups): 0.4M bails in cpu; with a page compiled again without
+  groups after 32 misses, spring still compiled 464 pages again (JVM
+  objects across page boundaries), grouped only 7 % and its process CPU
+  went up 79.6 -> 84.3 s with the same main thread. Parked.
 
 ## Instruction set extensions: what pays (measured 2026-11-13)
 
