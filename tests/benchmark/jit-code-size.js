@@ -3,6 +3,7 @@
 // Run each build in a fresh process to avoid sharing V8's compiled-module cache.
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { createHash as create_hash } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { V86 } from "../../src/main.js";
 
@@ -24,12 +25,28 @@ await new Promise(resolve => emulator.add_listener("emulator-loaded", resolve));
 const cpu = emulator.v86.cpu;
 const pending = new Map();
 const modules = [];
+const corpus = [];
+const corpus_keys = new Set();
+if(process.env.CORPUS_DIR) fs.mkdirSync(process.env.CORPUS_DIR, { recursive: true });
 let compile_ms = 0;
 let generated_bytes = 0;
 const finalize = cpu.codegen_finalize;
 cpu.codegen_finalize = function(index, start, flags, ptr, len)
 {
     generated_bytes += len;
+    const entry_offset = cpu.instruction_pointer[0] & 0xFFF;
+    if(process.env.CORPUS_DIR && flags & 1 && entry_offset < 0x1000 - 16)
+    {
+        const page = cpu.mem8.slice(start, start + 0x1000);
+        const key = `${flags}:${entry_offset}:` + create_hash("sha256").update(page).digest("hex");
+        if(!corpus_keys.has(key))
+        {
+            corpus_keys.add(key);
+            const file = `${corpus.length}.bin`;
+            fs.writeFileSync(`${process.env.CORPUS_DIR}/${file}`, page);
+            corpus.push({ file, flags, entry_offset });
+        }
+    }
     if(process.env.MODULE_DIR)
     {
         fs.mkdirSync(process.env.MODULE_DIR, { recursive: true });
@@ -99,6 +116,10 @@ emulator.add_listener("serial0-output-byte", async byte => {
                 clearTimeout(timeout);
                 await emulator.stop();
                 const total = snapshot();
+                if(process.env.CORPUS_DIR)
+                {
+                    fs.writeFileSync(`${process.env.CORPUS_DIR}/pages.json`, JSON.stringify(corpus));
+                }
                 console.log(JSON.stringify({ wasm_path, node: process.version, v8: process.versions.v8,
                     results, total: delta(boot_start, total),
                     bytes_per_page: total.stats.COMPILE_PAGE ? generated_bytes / total.stats.COMPILE_PAGE : null }));

@@ -1,0 +1,4656 @@
+{
+  "baseline_commit": "174ed6820965fbe1f32fd0b3d714d7abac8a5981",
+  "implementation_commit": "53d82b92e1d65d97813352661e1c1d9f5097c7cb",
+  "node": "v24.22.1",
+  "v8": "13.6.233.17-node.58",
+  "rust": "1.100.0 (0ef1bc386 2026-11-09)",
+  "date": "2026-11-13",
+  "input_sha256": {
+    "images/buildroot-bzimage68.bin": "507a759c70ab7a490a233be454d0b5b88bc667956a410b531cb4edc091e2eb1c",
+    "tools/pod-bench/data/vm/vmlinux": "a48bf8c235b09a847d9264457837e47207bad4bc23736b1608167c8620311356",
+    "tools/pod-bench/data/vm/init": "50bbecbfbf68b668a9f29a0c948514366f592ed45033549acbd5433828dffac2",
+    "tools/pod-bench/data/alpine.tar": "51a3634b11ecdb131a97f65d0647dc0be4d084aa3a085ee9b4ff0cf430a47097",
+    "tools/pod-bench/data/nginx.tar": "1f2d7120fa6d1ba778f646bc505a562604becffec40c120bfc156c5d487fbfbf",
+    "build/jit-code-size-corpus/pages.json": "1b04fd6ffa5998f448a26bef4ff6774f079a415a9fed8c0f71ad19f0ca870c47"
+  },
+  "fixed_corpus": {
+    "before": [
+      {
+        "wasm_path": "/tmp/v86-before-debug.wasm",
+        "node": "v24.22.1",
+        "pages": 161,
+        "bytes": 1413083,
+        "bytes_per_page": 8776.91304347826,
+        "codegen_ms": 65.96955599999995,
+        "compile_ms": 135.724895,
+        "results": [
+          {
+            "file": "0.bin",
+            "bytes": 895,
+            "codegen_ms": 6.744818000000009,
+            "compile_ms": 0.752873999999963
+          },
+          {
+            "file": "1.bin",
+            "bytes": 3241,
+            "codegen_ms": 2.91265599999997,
+            "compile_ms": 3.132817999999986
+          },
+          {
+            "file": "2.bin",
+            "bytes": 24746,
+            "codegen_ms": 2.740207000000055,
+            "compile_ms": 0.28687200000001667
+          },
+          {
+            "file": "3.bin",
+            "bytes": 24743,
+            "codegen_ms": 0.8661040000000071,
+            "compile_ms": 4.7223920000000135
+          },
+          {
+            "file": "4.bin",
+            "bytes": 24775,
+            "codegen_ms": 0.7633389999999736,
+            "compile_ms": 35.927775
+          },
+          {
+            "file": "5.bin",
+            "bytes": 2116,
+            "codegen_ms": 0.5793820000000096,
+            "compile_ms": 0.2278639999999541
+          },
+          {
+            "file": "6.bin",
+            "bytes": 823,
+            "codegen_ms": 0.161563000000001,
+            "compile_ms": 0.15933999999998605
+          },
+          {
+            "file": "7.bin",
+            "bytes": 929,
+            "codegen_ms": 0.09446300000001884,
+            "compile_ms": 0.205428999999981
+          },
+          {
+            "file": "8.bin",
+            "bytes": 1509,
+            "codegen_ms": 0.41962200000000394,
+            "compile_ms": 0.15262000000001308
+          },
+          {
+            "file": "9.bin",
+            "bytes": 887,
+            "codegen_ms": 0.2633769999999913,
+            "compile_ms": 0.14738199999999324
+          },
+          {
+            "file": "10.bin",
+            "bytes": 13187,
+            "codegen_ms": 0.8959089999999605,
+            "compile_ms": 0.2530909999999835
+          },
+          {
+            "file": "11.bin",
+            "bytes": 596,
+            "codegen_ms": 0.07211800000004587,
+            "compile_ms": 0.12547899999998435
+          },
+          {
+            "file": "12.bin",
+            "bytes": 4970,
+            "codegen_ms": 0.46381900000000087,
+            "compile_ms": 0.17442199999999275
+          },
+          {
+            "file": "13.bin",
+            "bytes": 2254,
+            "codegen_ms": 0.1255090000000223,
+            "compile_ms": 0.14060200000000123
+          },
+          {
+            "file": "14.bin",
+            "bytes": 1374,
+            "codegen_ms": 0.15336100000001807,
+            "compile_ms": 0.16375600000003487
+          },
+          {
+            "file": "15.bin",
+            "bytes": 9449,
+            "codegen_ms": 0.9072069999999712,
+            "compile_ms": 0.20421800000002577
+          },
+          {
+            "file": "16.bin",
+            "bytes": 1692,
+            "codegen_ms": 0.08479799999997795,
+            "compile_ms": 0.1311279999999897
+          },
+          {
+            "file": "17.bin",
+            "bytes": 20598,
+            "codegen_ms": 0.9603460000000155,
+            "compile_ms": 55.28734000000003
+          },
+          {
+            "file": "18.bin",
+            "bytes": 18788,
+            "codegen_ms": 0.45914199999998573,
+            "compile_ms": 0.35856999999998607
+          },
+          {
+            "file": "19.bin",
+            "bytes": 22789,
+            "codegen_ms": 0.6598829999999793,
+            "compile_ms": 2.2767990000000395
+          },
+          {
+            "file": "20.bin",
+            "bytes": 1467,
+            "codegen_ms": 0.17366100000003826,
+            "compile_ms": 0.1631360000000086
+          },
+          {
+            "file": "21.bin",
+            "bytes": 907,
+            "codegen_ms": 0.2003819999999905,
+            "compile_ms": 0.25596500000000333
+          },
+          {
+            "file": "22.bin",
+            "bytes": 89170,
+            "codegen_ms": 2.9626109999999812,
+            "compile_ms": 2.275888000000009
+          },
+          {
+            "file": "23.bin",
+            "bytes": 16472,
+            "codegen_ms": 1.3659370000000308,
+            "compile_ms": 0.22754299999996874
+          },
+          {
+            "file": "24.bin",
+            "bytes": 4435,
+            "codegen_ms": 0.17970000000002528,
+            "compile_ms": 0.21957100000003038
+          },
+          {
+            "file": "25.bin",
+            "bytes": 1917,
+            "codegen_ms": 0.116375000000005,
+            "compile_ms": 0.2670830000000137
+          },
+          {
+            "file": "26.bin",
+            "bytes": 712,
+            "codegen_ms": 0.07317000000000462,
+            "compile_ms": 0.12843300000002955
+          },
+          {
+            "file": "27.bin",
+            "bytes": 4803,
+            "codegen_ms": 0.22116299999999,
+            "compile_ms": 0.19000599999998258
+          },
+          {
+            "file": "28.bin",
+            "bytes": 3979,
+            "codegen_ms": 0.13267999999999347,
+            "compile_ms": 0.16020099999997228
+          },
+          {
+            "file": "29.bin",
+            "bytes": 2276,
+            "codegen_ms": 0.11604499999998552,
+            "compile_ms": 0.1375770000000216
+          },
+          {
+            "file": "30.bin",
+            "bytes": 1416,
+            "codegen_ms": 0.1596410000000219,
+            "compile_ms": 0.12874400000004016
+          },
+          {
+            "file": "31.bin",
+            "bytes": 4711,
+            "codegen_ms": 0.16842399999995905,
+            "compile_ms": 0.17529400000000805
+          },
+          {
+            "file": "32.bin",
+            "bytes": 10114,
+            "codegen_ms": 0.45682800000003,
+            "compile_ms": 0.2942830000000072
+          },
+          {
+            "file": "33.bin",
+            "bytes": 622,
+            "codegen_ms": 0.06630999999998721,
+            "compile_ms": 0.12806299999999737
+          },
+          {
+            "file": "34.bin",
+            "bytes": 2108,
+            "codegen_ms": 0.20494800000000168,
+            "compile_ms": 0.11483300000003283
+          },
+          {
+            "file": "35.bin",
+            "bytes": 13922,
+            "codegen_ms": 0.8250529999999685,
+            "compile_ms": 0.1822949999999537
+          },
+          {
+            "file": "36.bin",
+            "bytes": 505,
+            "codegen_ms": 0.07086699999996426,
+            "compile_ms": 0.1240760000000023
+          },
+          {
+            "file": "37.bin",
+            "bytes": 5366,
+            "codegen_ms": 0.27961100000004535,
+            "compile_ms": 0.1692639999999983
+          },
+          {
+            "file": "38.bin",
+            "bytes": 3421,
+            "codegen_ms": 0.14363600000001497,
+            "compile_ms": 0.1415330000000381
+          },
+          {
+            "file": "39.bin",
+            "bytes": 4925,
+            "codegen_ms": 0.1507569999999987,
+            "compile_ms": 0.12884400000001506
+          },
+          {
+            "file": "40.bin",
+            "bytes": 5985,
+            "codegen_ms": 0.14780199999995602,
+            "compile_ms": 0.19330100000001949
+          },
+          {
+            "file": "41.bin",
+            "bytes": 3001,
+            "codegen_ms": 0.15147799999999734,
+            "compile_ms": 0.12636000000003378
+          },
+          {
+            "file": "42.bin",
+            "bytes": 6927,
+            "codegen_ms": 0.3501770000000306,
+            "compile_ms": 0.14972600000004377
+          },
+          {
+            "file": "43.bin",
+            "bytes": 2399,
+            "codegen_ms": 0.10667000000000826,
+            "compile_ms": 0.14064200000001392
+          },
+          {
+            "file": "44.bin",
+            "bytes": 35304,
+            "codegen_ms": 0.5771199999999794,
+            "compile_ms": 0.29988099999997075
+          },
+          {
+            "file": "45.bin",
+            "bytes": 4388,
+            "codegen_ms": 0.16554899999999861,
+            "compile_ms": 0.22874500000000353
+          },
+          {
+            "file": "46.bin",
+            "bytes": 16519,
+            "codegen_ms": 0.41823000000005095,
+            "compile_ms": 0.19705599999997503
+          },
+          {
+            "file": "47.bin",
+            "bytes": 5453,
+            "codegen_ms": 0.129745000000014,
+            "compile_ms": 0.13299999999998136
+          },
+          {
+            "file": "48.bin",
+            "bytes": 1790,
+            "codegen_ms": 0.09338999999999942,
+            "compile_ms": 0.14050200000002633
+          },
+          {
+            "file": "49.bin",
+            "bytes": 2208,
+            "codegen_ms": 0.0916080000000079,
+            "compile_ms": 0.14035200000000714
+          },
+          {
+            "file": "50.bin",
+            "bytes": 9179,
+            "codegen_ms": 0.24951600000002827,
+            "compile_ms": 0.24111299999998437
+          },
+          {
+            "file": "51.bin",
+            "bytes": 4282,
+            "codegen_ms": 0.1888139999999794,
+            "compile_ms": 0.17752799999999525
+          },
+          {
+            "file": "52.bin",
+            "bytes": 1016,
+            "codegen_ms": 0.15042599999998174,
+            "compile_ms": 0.13504299999999603
+          },
+          {
+            "file": "53.bin",
+            "bytes": 13212,
+            "codegen_ms": 0.601255999999978,
+            "compile_ms": 0.200491999999997
+          },
+          {
+            "file": "54.bin",
+            "bytes": 2838,
+            "codegen_ms": 0.1169460000000413,
+            "compile_ms": 0.13187799999997196
+          },
+          {
+            "file": "55.bin",
+            "bytes": 505,
+            "codegen_ms": 0.12261499999999614,
+            "compile_ms": 0.11917900000003101
+          },
+          {
+            "file": "56.bin",
+            "bytes": 13845,
+            "codegen_ms": 0.29750799999999344,
+            "compile_ms": 0.21436299999999164
+          },
+          {
+            "file": "57.bin",
+            "bytes": 5061,
+            "codegen_ms": 0.2543529999999805,
+            "compile_ms": 0.13981000000001131
+          },
+          {
+            "file": "58.bin",
+            "bytes": 514,
+            "codegen_ms": 0.06605999999999312,
+            "compile_ms": 0.12028100000003406
+          },
+          {
+            "file": "59.bin",
+            "bytes": 6693,
+            "codegen_ms": 0.23548399999998537,
+            "compile_ms": 0.19354099999998198
+          },
+          {
+            "file": "60.bin",
+            "bytes": 52589,
+            "codegen_ms": 0.9273370000000227,
+            "compile_ms": 0.4172790000000077
+          },
+          {
+            "file": "61.bin",
+            "bytes": 2896,
+            "codegen_ms": 0.36352700000003324,
+            "compile_ms": 0.1378169999999841
+          },
+          {
+            "file": "62.bin",
+            "bytes": 10881,
+            "codegen_ms": 0.256005000000016,
+            "compile_ms": 0.20152300000000878
+          },
+          {
+            "file": "63.bin",
+            "bytes": 2427,
+            "codegen_ms": 0.14426699999995662,
+            "compile_ms": 0.1249779999999987
+          },
+          {
+            "file": "64.bin",
+            "bytes": 505,
+            "codegen_ms": 0.06770200000005389,
+            "compile_ms": 0.11789699999997083
+          },
+          {
+            "file": "65.bin",
+            "bytes": 2638,
+            "codegen_ms": 0.17225899999999683,
+            "compile_ms": 0.1754039999999577
+          },
+          {
+            "file": "66.bin",
+            "bytes": 4079,
+            "codegen_ms": 0.1432559999999512,
+            "compile_ms": 0.2085739999999987
+          },
+          {
+            "file": "67.bin",
+            "bytes": 3203,
+            "codegen_ms": 0.21183899999999767,
+            "compile_ms": 0.18361699999996972
+          },
+          {
+            "file": "68.bin",
+            "bytes": 2107,
+            "codegen_ms": 0.10350600000003851,
+            "compile_ms": 0.12880400000000236
+          },
+          {
+            "file": "69.bin",
+            "bytes": 1013,
+            "codegen_ms": 0.07685599999996384,
+            "compile_ms": 0.1301559999999995
+          },
+          {
+            "file": "70.bin",
+            "bytes": 596,
+            "codegen_ms": 0.06176299999998491,
+            "compile_ms": 0.23889000000002625
+          },
+          {
+            "file": "71.bin",
+            "bytes": 30951,
+            "codegen_ms": 0.7533649999999739,
+            "compile_ms": 0.2554049999999961
+          },
+          {
+            "file": "72.bin",
+            "bytes": 15000,
+            "codegen_ms": 0.43060800000000654,
+            "compile_ms": 0.18063199999994595
+          },
+          {
+            "file": "73.bin",
+            "bytes": 11617,
+            "codegen_ms": 0.3499869999999987,
+            "compile_ms": 0.1935219999999731
+          },
+          {
+            "file": "74.bin",
+            "bytes": 33545,
+            "codegen_ms": 0.727154999999982,
+            "compile_ms": 0.29145900000003166
+          },
+          {
+            "file": "75.bin",
+            "bytes": 2374,
+            "codegen_ms": 0.128283999999951,
+            "compile_ms": 0.12255500000003394
+          },
+          {
+            "file": "76.bin",
+            "bytes": 1264,
+            "codegen_ms": 0.06940500000001748,
+            "compile_ms": 0.13975099999998974
+          },
+          {
+            "file": "77.bin",
+            "bytes": 1531,
+            "codegen_ms": 0.08938499999999294,
+            "compile_ms": 0.11987099999998918
+          },
+          {
+            "file": "78.bin",
+            "bytes": 35191,
+            "codegen_ms": 1.1218000000000075,
+            "compile_ms": 0.3746439999999893
+          },
+          {
+            "file": "79.bin",
+            "bytes": 1675,
+            "codegen_ms": 0.29768799999999374,
+            "compile_ms": 0.18677099999996472
+          },
+          {
+            "file": "80.bin",
+            "bytes": 1849,
+            "codegen_ms": 0.09805799999998044,
+            "compile_ms": 0.139129999999966
+          },
+          {
+            "file": "81.bin",
+            "bytes": 14553,
+            "codegen_ms": 0.46242699999999104,
+            "compile_ms": 0.2362850000000094
+          },
+          {
+            "file": "82.bin",
+            "bytes": 645,
+            "codegen_ms": 0.130786999999998,
+            "compile_ms": 0.10884400000003325
+          },
+          {
+            "file": "83.bin",
+            "bytes": 3925,
+            "codegen_ms": 0.12858399999998937,
+            "compile_ms": 0.1901369999999929
+          },
+          {
+            "file": "84.bin",
+            "bytes": 31486,
+            "codegen_ms": 0.6858119999999985,
+            "compile_ms": 0.37960200000003397
+          },
+          {
+            "file": "85.bin",
+            "bytes": 609,
+            "codegen_ms": 0.07068600000002334,
+            "compile_ms": 0.11211900000000696
+          },
+          {
+            "file": "86.bin",
+            "bytes": 622,
+            "codegen_ms": 0.06346500000000788,
+            "compile_ms": 0.11022600000001148
+          },
+          {
+            "file": "87.bin",
+            "bytes": 11835,
+            "codegen_ms": 0.25747700000005125,
+            "compile_ms": 0.26917500000001837
+          },
+          {
+            "file": "88.bin",
+            "bytes": 825,
+            "codegen_ms": 0.0714280000000258,
+            "compile_ms": 0.13954999999998563
+          },
+          {
+            "file": "89.bin",
+            "bytes": 600,
+            "codegen_ms": 0.0669809999999984,
+            "compile_ms": 0.11146800000000212
+          },
+          {
+            "file": "90.bin",
+            "bytes": 4912,
+            "codegen_ms": 0.15591499999999314,
+            "compile_ms": 0.13395200000002205
+          },
+          {
+            "file": "91.bin",
+            "bytes": 52775,
+            "codegen_ms": 1.430024000000003,
+            "compile_ms": 0.7435689999999795
+          },
+          {
+            "file": "92.bin",
+            "bytes": 5516,
+            "codegen_ms": 0.15267000000000053,
+            "compile_ms": 0.15621499999997468
+          },
+          {
+            "file": "93.bin",
+            "bytes": 26728,
+            "codegen_ms": 0.5944660000000113,
+            "compile_ms": 0.28897499999999354
+          },
+          {
+            "file": "94.bin",
+            "bytes": 5150,
+            "codegen_ms": 0.13943000000000438,
+            "compile_ms": 0.15305100000000493
+          },
+          {
+            "file": "95.bin",
+            "bytes": 10600,
+            "codegen_ms": 0.36393800000001875,
+            "compile_ms": 0.257378000000017
+          },
+          {
+            "file": "96.bin",
+            "bytes": 4981,
+            "codegen_ms": 0.21135800000001836,
+            "compile_ms": 0.14251399999994874
+          },
+          {
+            "file": "97.bin",
+            "bytes": 2422,
+            "codegen_ms": 0.16635100000002012,
+            "compile_ms": 0.13086700000002338
+          },
+          {
+            "file": "98.bin",
+            "bytes": 17805,
+            "codegen_ms": 0.4783300000000281,
+            "compile_ms": 0.18845299999998133
+          },
+          {
+            "file": "99.bin",
+            "bytes": 2541,
+            "codegen_ms": 0.10619000000002643,
+            "compile_ms": 0.18952500000000327
+          },
+          {
+            "file": "100.bin",
+            "bytes": 6755,
+            "codegen_ms": 0.4823769999999854,
+            "compile_ms": 0.19742700000000468
+          },
+          {
+            "file": "101.bin",
+            "bytes": 20082,
+            "codegen_ms": 1.0061559999999758,
+            "compile_ms": 0.28130399999997735
+          },
+          {
+            "file": "102.bin",
+            "bytes": 1647,
+            "codegen_ms": 0.28566000000000713,
+            "compile_ms": 0.15358199999997169
+          },
+          {
+            "file": "103.bin",
+            "bytes": 3334,
+            "codegen_ms": 0.11498299999999517,
+            "compile_ms": 0.1889749999999708
+          },
+          {
+            "file": "104.bin",
+            "bytes": 744,
+            "codegen_ms": 0.0795999999999708,
+            "compile_ms": 0.14192400000001726
+          },
+          {
+            "file": "105.bin",
+            "bytes": 1103,
+            "codegen_ms": 0.08788199999997914,
+            "compile_ms": 0.14614999999997735
+          },
+          {
+            "file": "106.bin",
+            "bytes": 5872,
+            "codegen_ms": 0.17495400000001382,
+            "compile_ms": 0.21463299999999208
+          },
+          {
+            "file": "107.bin",
+            "bytes": 6034,
+            "codegen_ms": 0.2076020000000085,
+            "compile_ms": 0.17316099999999324
+          },
+          {
+            "file": "108.bin",
+            "bytes": 2551,
+            "codegen_ms": 0.1781780000000026,
+            "compile_ms": 0.2301259999999843
+          },
+          {
+            "file": "109.bin",
+            "bytes": 1927,
+            "codegen_ms": 0.09239900000000034,
+            "compile_ms": 0.22626000000002477
+          },
+          {
+            "file": "110.bin",
+            "bytes": 11790,
+            "codegen_ms": 0.33121899999997595,
+            "compile_ms": 0.2099759999999833
+          },
+          {
+            "file": "111.bin",
+            "bytes": 4860,
+            "codegen_ms": 0.2093349999999532,
+            "compile_ms": 0.21264100000001918
+          },
+          {
+            "file": "112.bin",
+            "bytes": 21866,
+            "codegen_ms": 0.8020480000000134,
+            "compile_ms": 0.2692049999999995
+          },
+          {
+            "file": "113.bin",
+            "bytes": 7033,
+            "codegen_ms": 0.21064699999999448,
+            "compile_ms": 0.19298000000003412
+          },
+          {
+            "file": "114.bin",
+            "bytes": 10633,
+            "codegen_ms": 0.6256220000000212,
+            "compile_ms": 0.479992999999979
+          },
+          {
+            "file": "115.bin",
+            "bytes": 2773,
+            "codegen_ms": 0.13272000000000617,
+            "compile_ms": 0.1649590000000103
+          },
+          {
+            "file": "116.bin",
+            "bytes": 1362,
+            "codegen_ms": 0.1296649999999886,
+            "compile_ms": 0.21025600000001532
+          },
+          {
+            "file": "117.bin",
+            "bytes": 18041,
+            "codegen_ms": 0.450979000000018,
+            "compile_ms": 0.22310600000002978
+          },
+          {
+            "file": "118.bin",
+            "bytes": 781,
+            "codegen_ms": 0.08006000000000313,
+            "compile_ms": 0.16492899999997235
+          },
+          {
+            "file": "119.bin",
+            "bytes": 575,
+            "codegen_ms": 0.13317100000000437,
+            "compile_ms": 0.16648100000003296
+          },
+          {
+            "file": "120.bin",
+            "bytes": 1267,
+            "codegen_ms": 0.13268999999996822,
+            "compile_ms": 0.14585900000002994
+          },
+          {
+            "file": "121.bin",
+            "bytes": 56152,
+            "codegen_ms": 1.4023520000000076,
+            "compile_ms": 0.5298880000000281
+          },
+          {
+            "file": "122.bin",
+            "bytes": 27373,
+            "codegen_ms": 1.2356899999999769,
+            "compile_ms": 0.36911600000001954
+          },
+          {
+            "file": "123.bin",
+            "bytes": 5451,
+            "codegen_ms": 0.3753449999999816,
+            "compile_ms": 0.19861899999995103
+          },
+          {
+            "file": "124.bin",
+            "bytes": 21255,
+            "codegen_ms": 0.46872600000000375,
+            "compile_ms": 0.3605230000000006
+          },
+          {
+            "file": "125.bin",
+            "bytes": 2779,
+            "codegen_ms": 0.3384900000000357,
+            "compile_ms": 0.16199399999999287
+          },
+          {
+            "file": "126.bin",
+            "bytes": 756,
+            "codegen_ms": 0.2446289999999749,
+            "compile_ms": 0.21127799999999297
+          },
+          {
+            "file": "127.bin",
+            "bytes": 16369,
+            "codegen_ms": 0.41945200000003524,
+            "compile_ms": 0.22690099999999802
+          },
+          {
+            "file": "128.bin",
+            "bytes": 1742,
+            "codegen_ms": 0.09574399999996785,
+            "compile_ms": 0.20315599999997858
+          },
+          {
+            "file": "129.bin",
+            "bytes": 1614,
+            "codegen_ms": 0.15919900000000098,
+            "compile_ms": 0.1538910000000442
+          },
+          {
+            "file": "130.bin",
+            "bytes": 14650,
+            "codegen_ms": 0.43823000000003276,
+            "compile_ms": 0.28646100000003116
+          },
+          {
+            "file": "131.bin",
+            "bytes": 4379,
+            "codegen_ms": 0.2295660000000339,
+            "compile_ms": 0.1901170000000434
+          },
+          {
+            "file": "132.bin",
+            "bytes": 2668,
+            "codegen_ms": 0.12932499999999436,
+            "compile_ms": 0.20659100000000308
+          },
+          {
+            "file": "133.bin",
+            "bytes": 929,
+            "codegen_ms": 0.07443200000000161,
+            "compile_ms": 0.13240000000001828
+          },
+          {
+            "file": "134.bin",
+            "bytes": 25645,
+            "codegen_ms": 1.0383640000000014,
+            "compile_ms": 0.2784489999999664
+          },
+          {
+            "file": "135.bin",
+            "bytes": 1429,
+            "codegen_ms": 0.10649999999998272,
+            "compile_ms": 0.1932209999999941
+          },
+          {
+            "file": "136.bin",
+            "bytes": 7221,
+            "codegen_ms": 0.39233100000001286,
+            "compile_ms": 0.24898500000000467
+          },
+          {
+            "file": "137.bin",
+            "bytes": 2763,
+            "codegen_ms": 0.14745199999998704,
+            "compile_ms": 0.2259400000000369
+          },
+          {
+            "file": "138.bin",
+            "bytes": 503,
+            "codegen_ms": 0.12397700000002487,
+            "compile_ms": 0.13898000000000366
+          },
+          {
+            "file": "139.bin",
+            "bytes": 4772,
+            "codegen_ms": 0.1499860000000126,
+            "compile_ms": 0.22306600000001708
+          },
+          {
+            "file": "140.bin",
+            "bytes": 14718,
+            "codegen_ms": 1.4819410000000062,
+            "compile_ms": 0.21616600000004382
+          },
+          {
+            "file": "141.bin",
+            "bytes": 505,
+            "codegen_ms": 0.0755439999999794,
+            "compile_ms": 0.1532100000000014
+          },
+          {
+            "file": "142.bin",
+            "bytes": 505,
+            "codegen_ms": 0.07310000000001082,
+            "compile_ms": 0.1334009999999921
+          },
+          {
+            "file": "143.bin",
+            "bytes": 1115,
+            "codegen_ms": 0.08397700000000441,
+            "compile_ms": 0.15118799999999055
+          },
+          {
+            "file": "144.bin",
+            "bytes": 626,
+            "codegen_ms": 0.1435170000000312,
+            "compile_ms": 0.1416430000000446
+          },
+          {
+            "file": "145.bin",
+            "bytes": 1946,
+            "codegen_ms": 0.47594600000002174,
+            "compile_ms": 0.15278000000000702
+          },
+          {
+            "file": "146.bin",
+            "bytes": 1637,
+            "codegen_ms": 0.12365600000003951,
+            "compile_ms": 0.16983599999997523
+          },
+          {
+            "file": "147.bin",
+            "bytes": 2438,
+            "codegen_ms": 0.13646599999998443,
+            "compile_ms": 0.15227900000002137
+          },
+          {
+            "file": "148.bin",
+            "bytes": 505,
+            "codegen_ms": 0.08632999999997537,
+            "compile_ms": 0.41045800000000554
+          },
+          {
+            "file": "149.bin",
+            "bytes": 670,
+            "codegen_ms": 0.09793700000000172,
+            "compile_ms": 0.20665199999996275
+          },
+          {
+            "file": "150.bin",
+            "bytes": 12498,
+            "codegen_ms": 0.3184799999999086,
+            "compile_ms": 0.23950000000002092
+          },
+          {
+            "file": "151.bin",
+            "bytes": 1307,
+            "codegen_ms": 0.23579499999993914,
+            "compile_ms": 0.17251999999996315
+          },
+          {
+            "file": "152.bin",
+            "bytes": 21113,
+            "codegen_ms": 0.520422999999937,
+            "compile_ms": 0.3728519999999662
+          },
+          {
+            "file": "153.bin",
+            "bytes": 4726,
+            "codegen_ms": 0.19352100000003247,
+            "compile_ms": 0.21705699999995431
+          },
+          {
+            "file": "154.bin",
+            "bytes": 55328,
+            "codegen_ms": 1.443373000000065,
+            "compile_ms": 0.6219470000000911
+          },
+          {
+            "file": "155.bin",
+            "bytes": 10016,
+            "codegen_ms": 0.2889949999999999,
+            "compile_ms": 0.19791799999995874
+          },
+          {
+            "file": "156.bin",
+            "bytes": 5959,
+            "codegen_ms": 0.2665319999999838,
+            "compile_ms": 0.20269499999994878
+          },
+          {
+            "file": "157.bin",
+            "bytes": 23558,
+            "codegen_ms": 0.5512710000000425,
+            "compile_ms": 0.2485149999999976
+          },
+          {
+            "file": "158.bin",
+            "bytes": 633,
+            "codegen_ms": 0.11958999999990283,
+            "compile_ms": 0.14611999999999625
+          },
+          {
+            "file": "159.bin",
+            "bytes": 3353,
+            "codegen_ms": 0.16746200000000044,
+            "compile_ms": 0.18242499999996653
+          },
+          {
+            "file": "160.bin",
+            "bytes": 9258,
+            "codegen_ms": 0.3274229999999534,
+            "compile_ms": 0.3254499999999325
+          }
+        ]
+      },
+      {
+        "wasm_path": "/tmp/v86-before-debug.wasm",
+        "node": "v24.22.1",
+        "pages": 161,
+        "bytes": 1413083,
+        "bytes_per_page": 8776.91304347826,
+        "codegen_ms": 62.29465099999982,
+        "compile_ms": 57.72977699999993
+      },
+      {
+        "wasm_path": "/tmp/v86-before-debug.wasm",
+        "node": "v24.22.1",
+        "pages": 161,
+        "bytes": 1413083,
+        "bytes_per_page": 8776.91304347826,
+        "codegen_ms": 55.614292000000205,
+        "compile_ms": 78.34285800000032
+      },
+      {
+        "wasm_path": "/tmp/v86-before-debug.wasm",
+        "node": "v24.22.1",
+        "pages": 161,
+        "bytes": 1413083,
+        "bytes_per_page": 8776.91304347826,
+        "codegen_ms": 60.83474199999992,
+        "compile_ms": 66.2325929999999
+      },
+      {
+        "wasm_path": "/tmp/v86-before-debug.wasm",
+        "node": "v24.22.1",
+        "pages": 161,
+        "bytes": 1413083,
+        "bytes_per_page": 8776.91304347826,
+        "codegen_ms": 57.04823300000007,
+        "compile_ms": 63.376834000000144
+      },
+      {
+        "wasm_path": "/tmp/v86-before-debug.wasm",
+        "node": "v24.22.1",
+        "pages": 161,
+        "bytes": 1413083,
+        "bytes_per_page": 8776.91304347826,
+        "codegen_ms": 68.65861800000005,
+        "compile_ms": 114.381441
+      },
+      {
+        "wasm_path": "/tmp/v86-before-debug.wasm",
+        "node": "v24.22.1",
+        "pages": 161,
+        "bytes": 1413083,
+        "bytes_per_page": 8776.91304347826,
+        "codegen_ms": 55.302772000000104,
+        "compile_ms": 68.86574100000007
+      }
+    ],
+    "after": [
+      {
+        "wasm_path": "build/v86-debug.wasm",
+        "node": "v24.22.1",
+        "pages": 161,
+        "bytes": 1363989,
+        "bytes_per_page": 8471.981366459628,
+        "codegen_ms": 74.24784800000012,
+        "compile_ms": 63.272613999999834,
+        "results": [
+          {
+            "file": "0.bin",
+            "bytes": 889,
+            "codegen_ms": 6.379006000000004,
+            "compile_ms": 0.5308100000000024
+          },
+          {
+            "file": "1.bin",
+            "bytes": 3161,
+            "codegen_ms": 2.280134000000004,
+            "compile_ms": 0.2053589999999872
+          },
+          {
+            "file": "2.bin",
+            "bytes": 23785,
+            "codegen_ms": 2.2447699999999884,
+            "compile_ms": 0.29695700000002034
+          },
+          {
+            "file": "3.bin",
+            "bytes": 23782,
+            "codegen_ms": 0.8377809999999783,
+            "compile_ms": 2.553203999999994
+          },
+          {
+            "file": "4.bin",
+            "bytes": 23814,
+            "codegen_ms": 0.7811059999999941,
+            "compile_ms": 21.317172999999997
+          },
+          {
+            "file": "5.bin",
+            "bytes": 2060,
+            "codegen_ms": 0.41212099999998486,
+            "compile_ms": 0.17950100000001612
+          },
+          {
+            "file": "6.bin",
+            "bytes": 811,
+            "codegen_ms": 0.14261500000000638,
+            "compile_ms": 0.1289239999999836
+          },
+          {
+            "file": "7.bin",
+            "bytes": 914,
+            "codegen_ms": 0.09508299999998826,
+            "compile_ms": 0.30849399999999605
+          },
+          {
+            "file": "8.bin",
+            "bytes": 1499,
+            "codegen_ms": 0.2268320000000017,
+            "compile_ms": 0.3057709999999929
+          },
+          {
+            "file": "9.bin",
+            "bytes": 872,
+            "codegen_ms": 0.12883400000001188,
+            "compile_ms": 0.14172400000001062
+          },
+          {
+            "file": "10.bin",
+            "bytes": 12762,
+            "codegen_ms": 0.8410259999999994,
+            "compile_ms": 0.20299600000001305
+          },
+          {
+            "file": "11.bin",
+            "bytes": 593,
+            "codegen_ms": 0.07058699999998908,
+            "compile_ms": 0.13717700000000832
+          },
+          {
+            "file": "12.bin",
+            "bytes": 4788,
+            "codegen_ms": 0.5123920000000055,
+            "compile_ms": 0.24643100000000118
+          },
+          {
+            "file": "13.bin",
+            "bytes": 2213,
+            "codegen_ms": 0.1226039999999955,
+            "compile_ms": 0.15865800000000263
+          },
+          {
+            "file": "14.bin",
+            "bytes": 1348,
+            "codegen_ms": 0.13682599999998502,
+            "compile_ms": 0.11802799999998115
+          },
+          {
+            "file": "15.bin",
+            "bytes": 9141,
+            "codegen_ms": 0.7019980000000032,
+            "compile_ms": 0.2555749999999932
+          },
+          {
+            "file": "16.bin",
+            "bytes": 1642,
+            "codegen_ms": 0.1419429999999977,
+            "compile_ms": 0.13450199999999768
+          },
+          {
+            "file": "17.bin",
+            "bytes": 19861,
+            "codegen_ms": 0.9941670000000045,
+            "compile_ms": 0.38598100000001523
+          },
+          {
+            "file": "18.bin",
+            "bytes": 17815,
+            "codegen_ms": 0.3999120000000005,
+            "compile_ms": 0.35721799999998893
+          },
+          {
+            "file": "19.bin",
+            "bytes": 21913,
+            "codegen_ms": 0.6538639999999987,
+            "compile_ms": 2.5164439999999786
+          },
+          {
+            "file": "20.bin",
+            "bytes": 1448,
+            "codegen_ms": 0.27742800000001466,
+            "compile_ms": 0.2321499999999901
+          },
+          {
+            "file": "21.bin",
+            "bytes": 894,
+            "codegen_ms": 0.12175400000000991,
+            "compile_ms": 0.2151139999999998
+          },
+          {
+            "file": "22.bin",
+            "bytes": 86089,
+            "codegen_ms": 5.399050000000017,
+            "compile_ms": 2.1070530000000076
+          },
+          {
+            "file": "23.bin",
+            "bytes": 15823,
+            "codegen_ms": 1.731457000000006,
+            "compile_ms": 0.3382599999999911
+          },
+          {
+            "file": "24.bin",
+            "bytes": 4255,
+            "codegen_ms": 0.2560060000000135,
+            "compile_ms": 0.2589399999999955
+          },
+          {
+            "file": "25.bin",
+            "bytes": 1866,
+            "codegen_ms": 0.21738700000000222,
+            "compile_ms": 0.23666700000001129
+          },
+          {
+            "file": "26.bin",
+            "bytes": 706,
+            "codegen_ms": 0.09784700000000157,
+            "compile_ms": 0.14797299999997904
+          },
+          {
+            "file": "27.bin",
+            "bytes": 4668,
+            "codegen_ms": 0.3520910000000015,
+            "compile_ms": 0.20189400000001
+          },
+          {
+            "file": "28.bin",
+            "bytes": 3877,
+            "codegen_ms": 0.17746699999997873,
+            "compile_ms": 0.18578999999999724
+          },
+          {
+            "file": "29.bin",
+            "bytes": 2209,
+            "codegen_ms": 0.18386600000002318,
+            "compile_ms": 0.16391699999999787
+          },
+          {
+            "file": "30.bin",
+            "bytes": 1395,
+            "codegen_ms": 0.22448800000000801,
+            "compile_ms": 0.16015099999998483
+          },
+          {
+            "file": "31.bin",
+            "bytes": 4533,
+            "codegen_ms": 0.23371199999999703,
+            "compile_ms": 0.19996100000000183
+          },
+          {
+            "file": "32.bin",
+            "bytes": 9773,
+            "codegen_ms": 0.6910509999999874,
+            "compile_ms": 0.23993100000001277
+          },
+          {
+            "file": "33.bin",
+            "bytes": 622,
+            "codegen_ms": 0.08749099999999999,
+            "compile_ms": 0.1475420000000156
+          },
+          {
+            "file": "34.bin",
+            "bytes": 2071,
+            "codegen_ms": 0.2646689999999978,
+            "compile_ms": 0.15805800000001113
+          },
+          {
+            "file": "35.bin",
+            "bytes": 13397,
+            "codegen_ms": 0.7665850000000205,
+            "compile_ms": 0.2550940000000139
+          },
+          {
+            "file": "36.bin",
+            "bytes": 505,
+            "codegen_ms": 0.08659000000000106,
+            "compile_ms": 0.1875919999999951
+          },
+          {
+            "file": "37.bin",
+            "bytes": 5211,
+            "codegen_ms": 0.3337930000000142,
+            "compile_ms": 0.22526899999999728
+          },
+          {
+            "file": "38.bin",
+            "bytes": 3361,
+            "codegen_ms": 0.25095799999999713,
+            "compile_ms": 0.22032200000001012
+          },
+          {
+            "file": "39.bin",
+            "bytes": 4733,
+            "codegen_ms": 0.30884500000001935,
+            "compile_ms": 0.21974099999999908
+          },
+          {
+            "file": "40.bin",
+            "bytes": 5778,
+            "codegen_ms": 0.2676429999999925,
+            "compile_ms": 0.22130300000000602
+          },
+          {
+            "file": "41.bin",
+            "bytes": 2938,
+            "codegen_ms": 0.23947099999998045,
+            "compile_ms": 0.17900899999997932
+          },
+          {
+            "file": "42.bin",
+            "bytes": 6701,
+            "codegen_ms": 0.42877599999999916,
+            "compile_ms": 0.20685100000000034
+          },
+          {
+            "file": "43.bin",
+            "bytes": 2341,
+            "codegen_ms": 0.16542899999998895,
+            "compile_ms": 0.22470899999999006
+          },
+          {
+            "file": "44.bin",
+            "bytes": 34064,
+            "codegen_ms": 1.1047339999999792,
+            "compile_ms": 0.35822999999999183
+          },
+          {
+            "file": "45.bin",
+            "bytes": 4256,
+            "codegen_ms": 0.33157900000000495,
+            "compile_ms": 0.2130109999999945
+          },
+          {
+            "file": "46.bin",
+            "bytes": 15952,
+            "codegen_ms": 0.6907199999999989,
+            "compile_ms": 0.29228999999997995
+          },
+          {
+            "file": "47.bin",
+            "bytes": 5251,
+            "codegen_ms": 0.3021349999999927,
+            "compile_ms": 0.1991299999999967
+          },
+          {
+            "file": "48.bin",
+            "bytes": 1751,
+            "codegen_ms": 0.1474529999999845,
+            "compile_ms": 0.2643679999999904
+          },
+          {
+            "file": "49.bin",
+            "bytes": 2151,
+            "codegen_ms": 0.1511380000000031,
+            "compile_ms": 0.2144830000000013
+          },
+          {
+            "file": "50.bin",
+            "bytes": 8838,
+            "codegen_ms": 0.36826500000000806,
+            "compile_ms": 0.2131610000000137
+          },
+          {
+            "file": "51.bin",
+            "bytes": 4148,
+            "codegen_ms": 0.3216639999999984,
+            "compile_ms": 0.19398200000000543
+          },
+          {
+            "file": "52.bin",
+            "bytes": 995,
+            "codegen_ms": 0.2567070000000058,
+            "compile_ms": 0.17025700000002075
+          },
+          {
+            "file": "53.bin",
+            "bytes": 12782,
+            "codegen_ms": 0.5992019999999911,
+            "compile_ms": 0.23680699999999888
+          },
+          {
+            "file": "54.bin",
+            "bytes": 2752,
+            "codegen_ms": 0.17577499999998736,
+            "compile_ms": 0.19921999999999684
+          },
+          {
+            "file": "55.bin",
+            "bytes": 505,
+            "codegen_ms": 0.15002599999999688,
+            "compile_ms": 0.16729200000000333
+          },
+          {
+            "file": "56.bin",
+            "bytes": 13318,
+            "codegen_ms": 0.5135739999999771,
+            "compile_ms": 0.2817539999999781
+          },
+          {
+            "file": "57.bin",
+            "bytes": 4909,
+            "codegen_ms": 0.3320099999999968,
+            "compile_ms": 0.2392109999999832
+          },
+          {
+            "file": "58.bin",
+            "bytes": 512,
+            "codegen_ms": 0.10646100000002434,
+            "compile_ms": 0.1928310000000124
+          },
+          {
+            "file": "59.bin",
+            "bytes": 6465,
+            "codegen_ms": 0.3680740000000071,
+            "compile_ms": 0.22341599999998607
+          },
+          {
+            "file": "60.bin",
+            "bytes": 50607,
+            "codegen_ms": 1.727862000000016,
+            "compile_ms": 0.4713600000000042
+          },
+          {
+            "file": "61.bin",
+            "bytes": 2819,
+            "codegen_ms": 0.45007799999999065,
+            "compile_ms": 0.18384699999998588
+          },
+          {
+            "file": "62.bin",
+            "bytes": 10517,
+            "codegen_ms": 0.46154599999999846,
+            "compile_ms": 0.24785300000002053
+          },
+          {
+            "file": "63.bin",
+            "bytes": 2377,
+            "codegen_ms": 0.26433799999998087,
+            "compile_ms": 0.19245999999998276
+          },
+          {
+            "file": "64.bin",
+            "bytes": 505,
+            "codegen_ms": 0.1003509999999892,
+            "compile_ms": 0.2067220000000134
+          },
+          {
+            "file": "65.bin",
+            "bytes": 2550,
+            "codegen_ms": 0.27830900000000725,
+            "compile_ms": 0.20934500000001321
+          },
+          {
+            "file": "66.bin",
+            "bytes": 3966,
+            "codegen_ms": 0.2513479999999788,
+            "compile_ms": 0.2043779999999913
+          },
+          {
+            "file": "67.bin",
+            "bytes": 3096,
+            "codegen_ms": 0.16766199999997866,
+            "compile_ms": 0.19831900000002634
+          },
+          {
+            "file": "68.bin",
+            "bytes": 2075,
+            "codegen_ms": 0.1541119999999978,
+            "compile_ms": 0.17293000000000802
+          },
+          {
+            "file": "69.bin",
+            "bytes": 1002,
+            "codegen_ms": 0.17308099999999627,
+            "compile_ms": 0.172300000000007
+          },
+          {
+            "file": "70.bin",
+            "bytes": 593,
+            "codegen_ms": 0.1022040000000004,
+            "compile_ms": 0.15932999999998287
+          },
+          {
+            "file": "71.bin",
+            "bytes": 29649,
+            "codegen_ms": 1.2709739999999954,
+            "compile_ms": 0.339841999999976
+          },
+          {
+            "file": "72.bin",
+            "bytes": 14432,
+            "codegen_ms": 0.4635279999999966,
+            "compile_ms": 0.2621149999999943
+          },
+          {
+            "file": "73.bin",
+            "bytes": 11257,
+            "codegen_ms": 0.5479950000000144,
+            "compile_ms": 0.23384300000000735
+          },
+          {
+            "file": "74.bin",
+            "bytes": 32427,
+            "codegen_ms": 1.477345000000014,
+            "compile_ms": 0.37592599999999265
+          },
+          {
+            "file": "75.bin",
+            "bytes": 2311,
+            "codegen_ms": 0.22005200000000968,
+            "compile_ms": 0.21117800000001807
+          },
+          {
+            "file": "76.bin",
+            "bytes": 1234,
+            "codegen_ms": 0.11491300000000138,
+            "compile_ms": 0.18826399999997534
+          },
+          {
+            "file": "77.bin",
+            "bytes": 1504,
+            "codegen_ms": 0.11294000000000892,
+            "compile_ms": 0.2272519999999929
+          },
+          {
+            "file": "78.bin",
+            "bytes": 34007,
+            "codegen_ms": 1.824216999999976,
+            "compile_ms": 0.37732900000000313
+          },
+          {
+            "file": "79.bin",
+            "bytes": 1650,
+            "codegen_ms": 0.3021049999999832,
+            "compile_ms": 0.24028099999998176
+          },
+          {
+            "file": "80.bin",
+            "bytes": 1803,
+            "codegen_ms": 0.1354740000000163,
+            "compile_ms": 0.16186400000000845
+          },
+          {
+            "file": "81.bin",
+            "bytes": 14042,
+            "codegen_ms": 0.665772000000004,
+            "compile_ms": 0.2631069999999909
+          },
+          {
+            "file": "82.bin",
+            "bytes": 642,
+            "codegen_ms": 0.09656499999999824,
+            "compile_ms": 0.18117300000000114
+          },
+          {
+            "file": "83.bin",
+            "bytes": 3774,
+            "codegen_ms": 0.17612499999998477,
+            "compile_ms": 0.16812299999998004
+          },
+          {
+            "file": "84.bin",
+            "bytes": 30530,
+            "codegen_ms": 1.1436080000000004,
+            "compile_ms": 0.3385900000000106
+          },
+          {
+            "file": "85.bin",
+            "bytes": 606,
+            "codegen_ms": 0.11090700000002585,
+            "compile_ms": 0.15182899999999222
+          },
+          {
+            "file": "86.bin",
+            "bytes": 622,
+            "codegen_ms": 0.11324100000001636,
+            "compile_ms": 0.15341100000000552
+          },
+          {
+            "file": "87.bin",
+            "bytes": 11383,
+            "codegen_ms": 0.3235770000000002,
+            "compile_ms": 0.29729800000001205
+          },
+          {
+            "file": "88.bin",
+            "bytes": 819,
+            "codegen_ms": 0.08285399999999754,
+            "compile_ms": 0.15091699999999264
+          },
+          {
+            "file": "89.bin",
+            "bytes": 597,
+            "codegen_ms": 0.09645500000002016,
+            "compile_ms": 0.3539729999999963
+          },
+          {
+            "file": "90.bin",
+            "bytes": 4768,
+            "codegen_ms": 0.22314599999998563,
+            "compile_ms": 0.2742529999999874
+          },
+          {
+            "file": "91.bin",
+            "bytes": 50467,
+            "codegen_ms": 1.8048869999999795,
+            "compile_ms": 0.48925699999998074
+          },
+          {
+            "file": "92.bin",
+            "bytes": 5341,
+            "codegen_ms": 0.18138300000001095,
+            "compile_ms": 0.2229650000000163
+          },
+          {
+            "file": "93.bin",
+            "bytes": 25775,
+            "codegen_ms": 0.8696500000000071,
+            "compile_ms": 0.2844080000000133
+          },
+          {
+            "file": "94.bin",
+            "bytes": 4945,
+            "codegen_ms": 0.17402199999997947,
+            "compile_ms": 0.18547900000001505
+          },
+          {
+            "file": "95.bin",
+            "bytes": 10215,
+            "codegen_ms": 0.5467830000000049,
+            "compile_ms": 0.33185900000000856
+          },
+          {
+            "file": "96.bin",
+            "bytes": 4881,
+            "codegen_ms": 0.18688099999999963,
+            "compile_ms": 0.18412799999998697
+          },
+          {
+            "file": "97.bin",
+            "bytes": 2357,
+            "codegen_ms": 0.21665699999999788,
+            "compile_ms": 0.20317600000001335
+          },
+          {
+            "file": "98.bin",
+            "bytes": 17224,
+            "codegen_ms": 0.521285000000006,
+            "compile_ms": 0.24054200000000492
+          },
+          {
+            "file": "99.bin",
+            "bytes": 2483,
+            "codegen_ms": 0.11950999999999112,
+            "compile_ms": 0.18994700000001785
+          },
+          {
+            "file": "100.bin",
+            "bytes": 6574,
+            "codegen_ms": 0.4641289999999856,
+            "compile_ms": 0.1811930000000075
+          },
+          {
+            "file": "101.bin",
+            "bytes": 19410,
+            "codegen_ms": 0.7465039999999874,
+            "compile_ms": 0.23950099999998997
+          },
+          {
+            "file": "102.bin",
+            "bytes": 1615,
+            "codegen_ms": 0.23101800000000594,
+            "compile_ms": 0.15721700000000283
+          },
+          {
+            "file": "103.bin",
+            "bytes": 3215,
+            "codegen_ms": 0.12763200000000552,
+            "compile_ms": 0.21201899999999796
+          },
+          {
+            "file": "104.bin",
+            "bytes": 735,
+            "codegen_ms": 0.0853180000000009,
+            "compile_ms": 0.15326100000001475
+          },
+          {
+            "file": "105.bin",
+            "bytes": 1087,
+            "codegen_ms": 0.12222399999998856,
+            "compile_ms": 0.3103880000000174
+          },
+          {
+            "file": "106.bin",
+            "bytes": 5657,
+            "codegen_ms": 0.18795300000002158,
+            "compile_ms": 0.19694599999999696
+          },
+          {
+            "file": "107.bin",
+            "bytes": 5883,
+            "codegen_ms": 0.36764299999998684,
+            "compile_ms": 0.203156000000007
+          },
+          {
+            "file": "108.bin",
+            "bytes": 2507,
+            "codegen_ms": 0.16636099999999487,
+            "compile_ms": 0.1685939999999846
+          },
+          {
+            "file": "109.bin",
+            "bytes": 1853,
+            "codegen_ms": 0.097106000000025,
+            "compile_ms": 0.14924400000001015
+          },
+          {
+            "file": "110.bin",
+            "bytes": 11331,
+            "codegen_ms": 0.31786800000000426,
+            "compile_ms": 0.21995200000000636
+          },
+          {
+            "file": "111.bin",
+            "bytes": 4668,
+            "codegen_ms": 0.31878000000000384,
+            "compile_ms": 0.1793299999999931
+          },
+          {
+            "file": "112.bin",
+            "bytes": 21049,
+            "codegen_ms": 0.6701889999999935,
+            "compile_ms": 0.21226999999998952
+          },
+          {
+            "file": "113.bin",
+            "bytes": 6738,
+            "codegen_ms": 0.27841900000001374,
+            "compile_ms": 0.2109879999999862
+          },
+          {
+            "file": "114.bin",
+            "bytes": 10169,
+            "codegen_ms": 0.6996539999999811,
+            "compile_ms": 0.18959499999999707
+          },
+          {
+            "file": "115.bin",
+            "bytes": 2711,
+            "codegen_ms": 0.12481800000000476,
+            "compile_ms": 0.17355100000000334
+          },
+          {
+            "file": "116.bin",
+            "bytes": 1339,
+            "codegen_ms": 0.09526400000001445,
+            "compile_ms": 0.1834270000000231
+          },
+          {
+            "file": "117.bin",
+            "bytes": 17304,
+            "codegen_ms": 0.9565510000000188,
+            "compile_ms": 0.21457300000000146
+          },
+          {
+            "file": "118.bin",
+            "bytes": 772,
+            "codegen_ms": 0.07217800000000807,
+            "compile_ms": 0.16367600000000948
+          },
+          {
+            "file": "119.bin",
+            "bytes": 573,
+            "codegen_ms": 0.0901360000000011,
+            "compile_ms": 0.11833799999999428
+          },
+          {
+            "file": "120.bin",
+            "bytes": 1249,
+            "codegen_ms": 0.09058600000000183,
+            "compile_ms": 0.15470300000001203
+          },
+          {
+            "file": "121.bin",
+            "bytes": 54268,
+            "codegen_ms": 1.2058460000000082,
+            "compile_ms": 0.3738830000000064
+          },
+          {
+            "file": "122.bin",
+            "bytes": 26302,
+            "codegen_ms": 0.8747279999999762,
+            "compile_ms": 0.260832999999991
+          },
+          {
+            "file": "123.bin",
+            "bytes": 5286,
+            "codegen_ms": 0.2842380000000162,
+            "compile_ms": 0.19962099999997918
+          },
+          {
+            "file": "124.bin",
+            "bytes": 20449,
+            "codegen_ms": 0.4884759999999915,
+            "compile_ms": 0.25967100000002574
+          },
+          {
+            "file": "125.bin",
+            "bytes": 2701,
+            "codegen_ms": 0.3365269999999896,
+            "compile_ms": 0.16890399999999772
+          },
+          {
+            "file": "126.bin",
+            "bytes": 748,
+            "codegen_ms": 0.12255399999997962,
+            "compile_ms": 0.16672099999999546
+          },
+          {
+            "file": "127.bin",
+            "bytes": 15778,
+            "codegen_ms": 0.43985299999997096,
+            "compile_ms": 0.23358100000001514
+          },
+          {
+            "file": "128.bin",
+            "bytes": 1683,
+            "codegen_ms": 0.10252400000001671,
+            "compile_ms": 0.1299359999999865
+          },
+          {
+            "file": "129.bin",
+            "bytes": 1578,
+            "codegen_ms": 0.11895999999995865,
+            "compile_ms": 0.17922900000002073
+          },
+          {
+            "file": "130.bin",
+            "bytes": 14151,
+            "codegen_ms": 0.38013200000000325,
+            "compile_ms": 0.28378699999996115
+          },
+          {
+            "file": "131.bin",
+            "bytes": 4255,
+            "codegen_ms": 0.24304599999999255,
+            "compile_ms": 0.17067700000001196
+          },
+          {
+            "file": "132.bin",
+            "bytes": 2589,
+            "codegen_ms": 0.11109800000002679,
+            "compile_ms": 0.17461299999996527
+          },
+          {
+            "file": "133.bin",
+            "bytes": 914,
+            "codegen_ms": 0.0819330000000491,
+            "compile_ms": 0.13281999999998106
+          },
+          {
+            "file": "134.bin",
+            "bytes": 24871,
+            "codegen_ms": 0.8479169999999954,
+            "compile_ms": 0.2615339999999833
+          },
+          {
+            "file": "135.bin",
+            "bytes": 1396,
+            "codegen_ms": 0.12753199999997378,
+            "compile_ms": 0.16032100000001037
+          },
+          {
+            "file": "136.bin",
+            "bytes": 6980,
+            "codegen_ms": 0.4863330000000019,
+            "compile_ms": 0.2011229999999955
+          },
+          {
+            "file": "137.bin",
+            "bytes": 2681,
+            "codegen_ms": 0.12234499999999571,
+            "compile_ms": 0.19880899999998292
+          },
+          {
+            "file": "138.bin",
+            "bytes": 503,
+            "codegen_ms": 0.13920000000001664,
+            "compile_ms": 0.1253590000000031
+          },
+          {
+            "file": "139.bin",
+            "bytes": 4636,
+            "codegen_ms": 0.15013700000002927,
+            "compile_ms": 0.13520299999998997
+          },
+          {
+            "file": "140.bin",
+            "bytes": 14178,
+            "codegen_ms": 0.3669219999999882,
+            "compile_ms": 0.3009630000000243
+          },
+          {
+            "file": "141.bin",
+            "bytes": 505,
+            "codegen_ms": 0.07248900000001868,
+            "compile_ms": 0.13776699999999664
+          },
+          {
+            "file": "142.bin",
+            "bytes": 505,
+            "codegen_ms": 0.07063599999997905,
+            "compile_ms": 0.12014099999998962
+          },
+          {
+            "file": "143.bin",
+            "bytes": 1082,
+            "codegen_ms": 0.10129200000000083,
+            "compile_ms": 0.1308169999999791
+          },
+          {
+            "file": "144.bin",
+            "bytes": 624,
+            "codegen_ms": 0.15798800000004576,
+            "compile_ms": 0.16826400000002195
+          },
+          {
+            "file": "145.bin",
+            "bytes": 1894,
+            "codegen_ms": 0.10593000000000075,
+            "compile_ms": 0.15214899999995168
+          },
+          {
+            "file": "146.bin",
+            "bytes": 1602,
+            "codegen_ms": 0.13326000000000704,
+            "compile_ms": 0.25651700000003075
+          },
+          {
+            "file": "147.bin",
+            "bytes": 2358,
+            "codegen_ms": 0.11385100000001103,
+            "compile_ms": 0.13813799999996945
+          },
+          {
+            "file": "148.bin",
+            "bytes": 505,
+            "codegen_ms": 0.07241900000002488,
+            "compile_ms": 0.14529899999996587
+          },
+          {
+            "file": "149.bin",
+            "bytes": 664,
+            "codegen_ms": 0.07532400000002326,
+            "compile_ms": 0.18018200000000206
+          },
+          {
+            "file": "150.bin",
+            "bytes": 12008,
+            "codegen_ms": 0.2996210000000019,
+            "compile_ms": 0.2603730000000155
+          },
+          {
+            "file": "151.bin",
+            "bytes": 1282,
+            "codegen_ms": 0.2227460000000292,
+            "compile_ms": 0.1732409999999618
+          },
+          {
+            "file": "152.bin",
+            "bytes": 20259,
+            "codegen_ms": 0.5573390000000131,
+            "compile_ms": 0.30481900000000905
+          },
+          {
+            "file": "153.bin",
+            "bytes": 4576,
+            "codegen_ms": 0.18151299999999537,
+            "compile_ms": 0.1777569999999855
+          },
+          {
+            "file": "154.bin",
+            "bytes": 53446,
+            "codegen_ms": 1.5965449999999919,
+            "compile_ms": 0.6442899999999554
+          },
+          {
+            "file": "155.bin",
+            "bytes": 9683,
+            "codegen_ms": 0.3041680000000042,
+            "compile_ms": 0.3040680000000293
+          },
+          {
+            "file": "156.bin",
+            "bytes": 5767,
+            "codegen_ms": 0.2900359999999864,
+            "compile_ms": 0.21812799999997878
+          },
+          {
+            "file": "157.bin",
+            "bytes": 22668,
+            "codegen_ms": 0.6183520000000158,
+            "compile_ms": 0.2999120000000062
+          },
+          {
+            "file": "158.bin",
+            "bytes": 630,
+            "codegen_ms": 0.08115200000003142,
+            "compile_ms": 0.1423950000000218
+          },
+          {
+            "file": "159.bin",
+            "bytes": 3256,
+            "codegen_ms": 0.16988600000001952,
+            "compile_ms": 0.1881630000000314
+          },
+          {
+            "file": "160.bin",
+            "bytes": 8931,
+            "codegen_ms": 0.24195499999996173,
+            "compile_ms": 0.24585000000001855
+          }
+        ]
+      },
+      {
+        "wasm_path": "build/v86-debug.wasm",
+        "node": "v24.22.1",
+        "pages": 161,
+        "bytes": 1363989,
+        "bytes_per_page": 8471.981366459628,
+        "codegen_ms": 63.840304999999944,
+        "compile_ms": 121.81576799999988
+      },
+      {
+        "wasm_path": "build/v86-debug.wasm",
+        "node": "v24.22.1",
+        "pages": 161,
+        "bytes": 1363989,
+        "bytes_per_page": 8471.981366459628,
+        "codegen_ms": 60.04497500000056,
+        "compile_ms": 84.1171839999997
+      },
+      {
+        "wasm_path": "build/v86-debug.wasm",
+        "node": "v24.22.1",
+        "pages": 161,
+        "bytes": 1363989,
+        "bytes_per_page": 8471.981366459628,
+        "codegen_ms": 56.86241000000038,
+        "compile_ms": 70.92702999999983
+      },
+      {
+        "wasm_path": "build/v86-debug.wasm",
+        "node": "v24.22.1",
+        "pages": 161,
+        "bytes": 1363989,
+        "bytes_per_page": 8471.981366459628,
+        "codegen_ms": 68.12865999999997,
+        "compile_ms": 74.4974420000004
+      },
+      {
+        "wasm_path": "build/v86-debug.wasm",
+        "node": "v24.22.1",
+        "pages": 161,
+        "bytes": 1363989,
+        "bytes_per_page": 8471.981366459628,
+        "codegen_ms": 60.26818900000015,
+        "compile_ms": 78.73843899999966
+      },
+      {
+        "wasm_path": "build/v86-debug.wasm",
+        "node": "v24.22.1",
+        "pages": 161,
+        "bytes": 1363989,
+        "bytes_per_page": 8471.981366459628,
+        "codegen_ms": 54.58921499999974,
+        "compile_ms": 77.46175300000007
+      }
+    ]
+  },
+  "isolated_compilation": {
+    "default": [
+      {
+        "directory": "/tmp/v86-corpus-before-modules",
+        "modules": 161,
+        "bytes": 1413083,
+        "milliseconds": 41.56140499999999,
+        "cpu_milliseconds": 39.245
+      },
+      {
+        "directory": "/tmp/v86-corpus-after-modules",
+        "modules": 161,
+        "bytes": 1363989,
+        "milliseconds": 27.816547,
+        "cpu_milliseconds": 25.914
+      },
+      {
+        "directory": "/tmp/v86-corpus-after-modules",
+        "modules": 161,
+        "bytes": 1363989,
+        "milliseconds": 33.583211000000006,
+        "cpu_milliseconds": 31.953
+      },
+      {
+        "directory": "/tmp/v86-corpus-before-modules",
+        "modules": 161,
+        "bytes": 1413083,
+        "milliseconds": 32.998756,
+        "cpu_milliseconds": 31.39
+      },
+      {
+        "directory": "/tmp/v86-corpus-before-modules",
+        "modules": 161,
+        "bytes": 1413083,
+        "milliseconds": 36.529002000000006,
+        "cpu_milliseconds": 34.934
+      },
+      {
+        "directory": "/tmp/v86-corpus-after-modules",
+        "modules": 161,
+        "bytes": 1363989,
+        "milliseconds": 22.815085000000003,
+        "cpu_milliseconds": 21.076
+      },
+      {
+        "directory": "/tmp/v86-corpus-after-modules",
+        "modules": 161,
+        "bytes": 1363989,
+        "milliseconds": 22.582666000000003,
+        "cpu_milliseconds": 21.003
+      },
+      {
+        "directory": "/tmp/v86-corpus-before-modules",
+        "modules": 161,
+        "bytes": 1413083,
+        "milliseconds": 24.783018999999996,
+        "cpu_milliseconds": 22.772
+      },
+      {
+        "directory": "/tmp/v86-corpus-before-modules",
+        "modules": 161,
+        "bytes": 1413083,
+        "milliseconds": 39.17209299999999,
+        "cpu_milliseconds": 37.402
+      },
+      {
+        "directory": "/tmp/v86-corpus-after-modules",
+        "modules": 161,
+        "bytes": 1363989,
+        "milliseconds": 34.88054499999999,
+        "cpu_milliseconds": 32.766
+      },
+      {
+        "directory": "/tmp/v86-corpus-after-modules",
+        "modules": 161,
+        "bytes": 1363989,
+        "milliseconds": 34.849908,
+        "cpu_milliseconds": 32.803
+      },
+      {
+        "directory": "/tmp/v86-corpus-before-modules",
+        "modules": 161,
+        "bytes": 1413083,
+        "milliseconds": 34.462239999999994,
+        "cpu_milliseconds": 32.604
+      },
+      {
+        "directory": "/tmp/v86-corpus-before-modules",
+        "modules": 161,
+        "bytes": 1413083,
+        "milliseconds": 24.519312,
+        "cpu_milliseconds": 22.561
+      },
+      {
+        "directory": "/tmp/v86-corpus-after-modules",
+        "modules": 161,
+        "bytes": 1363989,
+        "milliseconds": 23.076850000000007,
+        "cpu_milliseconds": 21.317
+      }
+    ],
+    "eager": [
+      {
+        "directory": "/tmp/v86-corpus-before-modules",
+        "modules": 161,
+        "bytes": 1413083,
+        "milliseconds": 73.92956500000001,
+        "cpu_milliseconds": 70.013
+      },
+      {
+        "directory": "/tmp/v86-corpus-after-modules",
+        "modules": 161,
+        "bytes": 1363989,
+        "milliseconds": 65.672983,
+        "cpu_milliseconds": 61.723
+      },
+      {
+        "directory": "/tmp/v86-corpus-after-modules",
+        "modules": 161,
+        "bytes": 1363989,
+        "milliseconds": 60.412750999999986,
+        "cpu_milliseconds": 57.071
+      },
+      {
+        "directory": "/tmp/v86-corpus-before-modules",
+        "modules": 161,
+        "bytes": 1413083,
+        "milliseconds": 70.891311,
+        "cpu_milliseconds": 66.369
+      },
+      {
+        "directory": "/tmp/v86-corpus-before-modules",
+        "modules": 161,
+        "bytes": 1413083,
+        "milliseconds": 62.856235999999996,
+        "cpu_milliseconds": 59.218
+      },
+      {
+        "directory": "/tmp/v86-corpus-after-modules",
+        "modules": 161,
+        "bytes": 1363989,
+        "milliseconds": 68.76878999999998,
+        "cpu_milliseconds": 62.317
+      },
+      {
+        "directory": "/tmp/v86-corpus-after-modules",
+        "modules": 161,
+        "bytes": 1363989,
+        "milliseconds": 70.310045,
+        "cpu_milliseconds": 65.803
+      },
+      {
+        "directory": "/tmp/v86-corpus-before-modules",
+        "modules": 161,
+        "bytes": 1413083,
+        "milliseconds": 104.901284,
+        "cpu_milliseconds": 100.725
+      },
+      {
+        "directory": "/tmp/v86-corpus-before-modules",
+        "modules": 161,
+        "bytes": 1413083,
+        "milliseconds": 83.896354,
+        "cpu_milliseconds": 79.634
+      },
+      {
+        "directory": "/tmp/v86-corpus-after-modules",
+        "modules": 161,
+        "bytes": 1363989,
+        "milliseconds": 64.12779600000002,
+        "cpu_milliseconds": 59.263
+      },
+      {
+        "directory": "/tmp/v86-corpus-after-modules",
+        "modules": 161,
+        "bytes": 1363989,
+        "milliseconds": 66.39402,
+        "cpu_milliseconds": 63.062
+      },
+      {
+        "directory": "/tmp/v86-corpus-before-modules",
+        "modules": 161,
+        "bytes": 1413083,
+        "milliseconds": 69.48492799999998,
+        "cpu_milliseconds": 65.655
+      },
+      {
+        "directory": "/tmp/v86-corpus-before-modules",
+        "modules": 161,
+        "bytes": 1413083,
+        "milliseconds": 66.08321099999999,
+        "cpu_milliseconds": 60.239
+      },
+      {
+        "directory": "/tmp/v86-corpus-after-modules",
+        "modules": 161,
+        "bytes": 1363989,
+        "milliseconds": 62.68856000000001,
+        "cpu_milliseconds": 58.262
+      }
+    ]
+  },
+  "buildroot_release": {
+    "before": [
+      {
+        "wasm_path": "/tmp/v86-before-release.wasm",
+        "node": "v24.22.1",
+        "v8": "13.6.233.17-node.58",
+        "results": [
+          {
+            "phase": "boot",
+            "elapsed_ms": 2696.623091,
+            "compile_ms": 1591.8702459999997,
+            "generated_bytes": 7658256,
+            "modules": 76,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "warmup",
+            "elapsed_ms": 6401.6215569999995,
+            "compile_ms": 343.82286300000214,
+            "generated_bytes": 3328709,
+            "modules": 34,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "cpu",
+            "elapsed_ms": 1698.8643600000014,
+            "compile_ms": 28.128749999998035,
+            "generated_bytes": 581076,
+            "modules": 5,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "program_start",
+            "elapsed_ms": 4648.144555000001,
+            "compile_ms": 47.367216000002145,
+            "generated_bytes": 1163385,
+            "modules": 13,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "cpu",
+            "elapsed_ms": 2054.7293979999995,
+            "compile_ms": 13.906211000001349,
+            "generated_bytes": 124094,
+            "modules": 2,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "program_start",
+            "elapsed_ms": 4477.150839999998,
+            "compile_ms": 21.920671000007133,
+            "generated_bytes": 607401,
+            "modules": 7,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "cpu",
+            "elapsed_ms": 1664.5892449999992,
+            "compile_ms": 12.530790000000707,
+            "generated_bytes": 85323,
+            "modules": 1,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "program_start",
+            "elapsed_ms": 4340.63336,
+            "compile_ms": 51.79227499999979,
+            "generated_bytes": 965218,
+            "modules": 12,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "cpu",
+            "elapsed_ms": 1876.8181659999973,
+            "compile_ms": 11.794001000002027,
+            "generated_bytes": 373095,
+            "modules": 3,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "program_start",
+            "elapsed_ms": 4554.166694,
+            "compile_ms": 10.380682000006345,
+            "generated_bytes": 273491,
+            "modules": 4,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "cpu",
+            "elapsed_ms": 2120.806751999997,
+            "compile_ms": 12.714898000005633,
+            "generated_bytes": 166430,
+            "modules": 1,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "program_start",
+            "elapsed_ms": 4654.968560000001,
+            "compile_ms": 0,
+            "generated_bytes": 0,
+            "modules": 0,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          }
+        ],
+        "total": {
+          "elapsed_ms": 41538.69619,
+          "compile_ms": 2234.2358080000313,
+          "generated_bytes": 16478479,
+          "modules": 169,
+          "stats": {
+            "COMPILE": 0,
+            "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+            "COMPILE_WRONG_ADDRESS_SPACE": 0,
+            "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+            "COMPILE_WITH_LOOP_SAFETY": 0,
+            "COMPILE_PAGE": 0,
+            "COMPILE_BASIC_BLOCK": 0,
+            "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+            "COMPILE_WASM_BLOCK": 0,
+            "COMPILE_WASM_LOOP": 0,
+            "COMPILE_DISPATCHER": 0,
+            "COMPILE_ENTRY_POINT": 0,
+            "COMPILE_WASM_TOTAL_BYTES": 0
+          }
+        },
+        "bytes_per_page": null
+      },
+      {
+        "wasm_path": "/tmp/v86-before-release.wasm",
+        "node": "v24.22.1",
+        "v8": "13.6.233.17-node.58",
+        "results": [
+          {
+            "phase": "boot",
+            "elapsed_ms": 2658.431979,
+            "compile_ms": 1616.0547530000003,
+            "generated_bytes": 6590715,
+            "modules": 69,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "warmup",
+            "elapsed_ms": 6785.138682000001,
+            "compile_ms": 388.7031650000026,
+            "generated_bytes": 4329591,
+            "modules": 42,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "cpu",
+            "elapsed_ms": 1755.388096999999,
+            "compile_ms": 17.355054999999993,
+            "generated_bytes": 368624,
+            "modules": 3,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "program_start",
+            "elapsed_ms": 4395.270081000001,
+            "compile_ms": 39.834163999994416,
+            "generated_bytes": 862240,
+            "modules": 10,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "cpu",
+            "elapsed_ms": 1673.2524660000017,
+            "compile_ms": 3.124194999998508,
+            "generated_bytes": 0,
+            "modules": 0,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "program_start",
+            "elapsed_ms": 4489.343349999999,
+            "compile_ms": 22.60731399999713,
+            "generated_bytes": 664291,
+            "modules": 7,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "cpu",
+            "elapsed_ms": 1578.4235289999997,
+            "compile_ms": 11.08237999999983,
+            "generated_bytes": 85323,
+            "modules": 1,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "program_start",
+            "elapsed_ms": 4519.717922,
+            "compile_ms": 57.08976199999961,
+            "generated_bytes": 1022520,
+            "modules": 14,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "cpu",
+            "elapsed_ms": 1652.797455,
+            "compile_ms": 10.504398999997647,
+            "generated_bytes": 270283,
+            "modules": 2,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "program_start",
+            "elapsed_ms": 4441.426750999999,
+            "compile_ms": 11.891177000001335,
+            "generated_bytes": 338016,
+            "modules": 4,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "cpu",
+            "elapsed_ms": 1604.6870189999972,
+            "compile_ms": 0,
+            "generated_bytes": 0,
+            "modules": 0,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "program_start",
+            "elapsed_ms": 4305.894192,
+            "compile_ms": 1.9367670000065118,
+            "generated_bytes": 31740,
+            "modules": 1,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          }
+        ],
+        "total": {
+          "elapsed_ms": 40115.659507000004,
+          "compile_ms": 2277.095473999992,
+          "generated_bytes": 15926044,
+          "modules": 164,
+          "stats": {
+            "COMPILE": 0,
+            "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+            "COMPILE_WRONG_ADDRESS_SPACE": 0,
+            "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+            "COMPILE_WITH_LOOP_SAFETY": 0,
+            "COMPILE_PAGE": 0,
+            "COMPILE_BASIC_BLOCK": 0,
+            "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+            "COMPILE_WASM_BLOCK": 0,
+            "COMPILE_WASM_LOOP": 0,
+            "COMPILE_DISPATCHER": 0,
+            "COMPILE_ENTRY_POINT": 0,
+            "COMPILE_WASM_TOTAL_BYTES": 0
+          }
+        },
+        "bytes_per_page": null
+      },
+      {
+        "wasm_path": "/tmp/v86-before-release.wasm",
+        "node": "v24.22.1",
+        "v8": "13.6.233.17-node.58",
+        "results": [
+          {
+            "phase": "boot",
+            "elapsed_ms": 2314.587715,
+            "compile_ms": 1082.466991000002,
+            "generated_bytes": 6688222,
+            "modules": 72,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "warmup",
+            "elapsed_ms": 6526.254370000001,
+            "compile_ms": 301.61537799999905,
+            "generated_bytes": 3739264,
+            "modules": 37,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "cpu",
+            "elapsed_ms": 1625.1564340000004,
+            "compile_ms": 28.683554000001095,
+            "generated_bytes": 656411,
+            "modules": 5,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "program_start",
+            "elapsed_ms": 4500.69629,
+            "compile_ms": 45.43988600000375,
+            "generated_bytes": 969807,
+            "modules": 12,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "cpu",
+            "elapsed_ms": 1456.1351399999985,
+            "compile_ms": 5.89010000000053,
+            "generated_bytes": 152387,
+            "modules": 1,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "program_start",
+            "elapsed_ms": 4457.214678,
+            "compile_ms": 33.070394999998825,
+            "generated_bytes": 535815,
+            "modules": 7,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "cpu",
+            "elapsed_ms": 1482.0969630000036,
+            "compile_ms": 14.900937000002159,
+            "generated_bytes": 175554,
+            "modules": 2,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "program_start",
+            "elapsed_ms": 4354.317922000002,
+            "compile_ms": 40.68897199999992,
+            "generated_bytes": 938332,
+            "modules": 11,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "cpu",
+            "elapsed_ms": 1441.880255,
+            "compile_ms": 8.159546999999293,
+            "generated_bytes": 413194,
+            "modules": 3,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "program_start",
+            "elapsed_ms": 4233.358827,
+            "compile_ms": 17.133300000004965,
+            "generated_bytes": 554417,
+            "modules": 5,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "cpu",
+            "elapsed_ms": 1489.2205450000038,
+            "compile_ms": 0,
+            "generated_bytes": 0,
+            "modules": 0,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "program_start",
+            "elapsed_ms": 4179.896301000001,
+            "compile_ms": 0,
+            "generated_bytes": 0,
+            "modules": 0,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          }
+        ],
+        "total": {
+          "elapsed_ms": 38313.186174,
+          "compile_ms": 1659.4780420000102,
+          "generated_bytes": 16102992,
+          "modules": 166,
+          "stats": {
+            "COMPILE": 0,
+            "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+            "COMPILE_WRONG_ADDRESS_SPACE": 0,
+            "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+            "COMPILE_WITH_LOOP_SAFETY": 0,
+            "COMPILE_PAGE": 0,
+            "COMPILE_BASIC_BLOCK": 0,
+            "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+            "COMPILE_WASM_BLOCK": 0,
+            "COMPILE_WASM_LOOP": 0,
+            "COMPILE_DISPATCHER": 0,
+            "COMPILE_ENTRY_POINT": 0,
+            "COMPILE_WASM_TOTAL_BYTES": 0
+          }
+        },
+        "bytes_per_page": null
+      }
+    ],
+    "after": [
+      {
+        "wasm_path": "/tmp/v86-after-release.wasm",
+        "node": "v24.22.1",
+        "v8": "13.6.233.17-node.58",
+        "results": [
+          {
+            "phase": "boot",
+            "elapsed_ms": 2890.475327,
+            "compile_ms": 1349.515575000001,
+            "generated_bytes": 7035477,
+            "modules": 77,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "warmup",
+            "elapsed_ms": 7298.889164,
+            "compile_ms": 411.1760959999956,
+            "generated_bytes": 3784114,
+            "modules": 38,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "cpu",
+            "elapsed_ms": 1626.806117,
+            "compile_ms": 8.168101000001116,
+            "generated_bytes": 269549,
+            "modules": 3,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "program_start",
+            "elapsed_ms": 4280.251700999999,
+            "compile_ms": 38.50011899999663,
+            "generated_bytes": 815835,
+            "modules": 11,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "cpu",
+            "elapsed_ms": 1391.3152719999998,
+            "compile_ms": 6.595041999997193,
+            "generated_bytes": 45415,
+            "modules": 1,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "program_start",
+            "elapsed_ms": 4326.3035039999995,
+            "compile_ms": 20.57581599999685,
+            "generated_bytes": 582710,
+            "modules": 8,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "cpu",
+            "elapsed_ms": 1515.9047339999997,
+            "compile_ms": 5.105318000001716,
+            "generated_bytes": 81953,
+            "modules": 1,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "program_start",
+            "elapsed_ms": 4265.119777,
+            "compile_ms": 65.24026700000468,
+            "generated_bytes": 893976,
+            "modules": 12,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "cpu",
+            "elapsed_ms": 1391.738540000002,
+            "compile_ms": 8.647643000000244,
+            "generated_bytes": 205139,
+            "modules": 3,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "program_start",
+            "elapsed_ms": 4334.423673999998,
+            "compile_ms": 12.322456999998622,
+            "generated_bytes": 370389,
+            "modules": 4,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "cpu",
+            "elapsed_ms": 1393.9245940000037,
+            "compile_ms": 0,
+            "generated_bytes": 0,
+            "modules": 0,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "program_start",
+            "elapsed_ms": 4154.870013,
+            "compile_ms": 0,
+            "generated_bytes": 0,
+            "modules": 0,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          }
+        ],
+        "total": {
+          "elapsed_ms": 39143.988181,
+          "compile_ms": 2052.2846519999894,
+          "generated_bytes": 15338913,
+          "modules": 171,
+          "stats": {
+            "COMPILE": 0,
+            "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+            "COMPILE_WRONG_ADDRESS_SPACE": 0,
+            "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+            "COMPILE_WITH_LOOP_SAFETY": 0,
+            "COMPILE_PAGE": 0,
+            "COMPILE_BASIC_BLOCK": 0,
+            "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+            "COMPILE_WASM_BLOCK": 0,
+            "COMPILE_WASM_LOOP": 0,
+            "COMPILE_DISPATCHER": 0,
+            "COMPILE_ENTRY_POINT": 0,
+            "COMPILE_WASM_TOTAL_BYTES": 0
+          }
+        },
+        "bytes_per_page": null
+      },
+      {
+        "wasm_path": "/tmp/v86-after-release.wasm",
+        "node": "v24.22.1",
+        "v8": "13.6.233.17-node.58",
+        "results": [
+          {
+            "phase": "boot",
+            "elapsed_ms": 2754.024859,
+            "compile_ms": 1661.4591799999998,
+            "generated_bytes": 6364890,
+            "modules": 70,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "warmup",
+            "elapsed_ms": 6039.034624999999,
+            "compile_ms": 380.1084849999961,
+            "generated_bytes": 3511832,
+            "modules": 36,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "cpu",
+            "elapsed_ms": 1519.496745999999,
+            "compile_ms": 19.48498400000244,
+            "generated_bytes": 539501,
+            "modules": 4,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "program_start",
+            "elapsed_ms": 4669.620516000001,
+            "compile_ms": 36.50320599999577,
+            "generated_bytes": 924214,
+            "modules": 11,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "cpu",
+            "elapsed_ms": 1778.3617799999993,
+            "compile_ms": 17.56409000000167,
+            "generated_bytes": 280637,
+            "modules": 2,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "program_start",
+            "elapsed_ms": 4542.511653999998,
+            "compile_ms": 27.526972999999998,
+            "generated_bytes": 586407,
+            "modules": 7,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "cpu",
+            "elapsed_ms": 1751.0898940000006,
+            "compile_ms": 5.032117000002472,
+            "generated_bytes": 81953,
+            "modules": 1,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "program_start",
+            "elapsed_ms": 5211.627288,
+            "compile_ms": 54.15149900000324,
+            "generated_bytes": 978261,
+            "modules": 13,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "cpu",
+            "elapsed_ms": 1600.403377999999,
+            "compile_ms": 5.287523999999394,
+            "generated_bytes": 114195,
+            "modules": 2,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "program_start",
+            "elapsed_ms": 4447.2979909999995,
+            "compile_ms": 15.860091999998986,
+            "generated_bytes": 410076,
+            "modules": 4,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "cpu",
+            "elapsed_ms": 1549.8848590000052,
+            "compile_ms": 0,
+            "generated_bytes": 0,
+            "modules": 0,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "program_start",
+            "elapsed_ms": 5226.617513999998,
+            "compile_ms": 3.7735329999995884,
+            "generated_bytes": 95030,
+            "modules": 1,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          }
+        ],
+        "total": {
+          "elapsed_ms": 41361.81968,
+          "compile_ms": 2259.3479789999938,
+          "generated_bytes": 14957854,
+          "modules": 161,
+          "stats": {
+            "COMPILE": 0,
+            "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+            "COMPILE_WRONG_ADDRESS_SPACE": 0,
+            "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+            "COMPILE_WITH_LOOP_SAFETY": 0,
+            "COMPILE_PAGE": 0,
+            "COMPILE_BASIC_BLOCK": 0,
+            "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+            "COMPILE_WASM_BLOCK": 0,
+            "COMPILE_WASM_LOOP": 0,
+            "COMPILE_DISPATCHER": 0,
+            "COMPILE_ENTRY_POINT": 0,
+            "COMPILE_WASM_TOTAL_BYTES": 0
+          }
+        },
+        "bytes_per_page": null
+      },
+      {
+        "wasm_path": "/tmp/v86-after-release.wasm",
+        "node": "v24.22.1",
+        "v8": "13.6.233.17-node.58",
+        "results": [
+          {
+            "phase": "boot",
+            "elapsed_ms": 2168.894202,
+            "compile_ms": 1173.4371039999996,
+            "generated_bytes": 6858919,
+            "modules": 73,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "warmup",
+            "elapsed_ms": 6358.959122,
+            "compile_ms": 338.6617840000031,
+            "generated_bytes": 3536527,
+            "modules": 37,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "cpu",
+            "elapsed_ms": 1704.8145239999994,
+            "compile_ms": 25.16265299999941,
+            "generated_bytes": 402359,
+            "modules": 4,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "program_start",
+            "elapsed_ms": 4283.951897000001,
+            "compile_ms": 33.62547099999756,
+            "generated_bytes": 855100,
+            "modules": 10,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "cpu",
+            "elapsed_ms": 1649.9072380000016,
+            "compile_ms": 12.468668999999863,
+            "generated_bytes": 305130,
+            "modules": 3,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "program_start",
+            "elapsed_ms": 4288.554858000003,
+            "compile_ms": 15.033724000000802,
+            "generated_bytes": 499360,
+            "modules": 6,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "cpu",
+            "elapsed_ms": 1676.4631180000033,
+            "compile_ms": 11.816004000000248,
+            "generated_bytes": 169000,
+            "modules": 2,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "program_start",
+            "elapsed_ms": 4469.422079000004,
+            "compile_ms": 58.95505900000353,
+            "generated_bytes": 966951,
+            "modules": 13,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "cpu",
+            "elapsed_ms": 1682.4648699999998,
+            "compile_ms": 14.727186999996775,
+            "generated_bytes": 380464,
+            "modules": 3,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "program_start",
+            "elapsed_ms": 4273.339435999998,
+            "compile_ms": 8.030964000001404,
+            "generated_bytes": 185404,
+            "modules": 3,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "cpu",
+            "elapsed_ms": 1571.7678849999938,
+            "compile_ms": 6.37448000000586,
+            "generated_bytes": 178132,
+            "modules": 1,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          },
+          {
+            "phase": "program_start",
+            "elapsed_ms": 4071.8432299999986,
+            "compile_ms": 0,
+            "generated_bytes": 0,
+            "modules": 0,
+            "stats": {
+              "COMPILE": 0,
+              "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+              "COMPILE_WRONG_ADDRESS_SPACE": 0,
+              "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+              "COMPILE_WITH_LOOP_SAFETY": 0,
+              "COMPILE_PAGE": 0,
+              "COMPILE_BASIC_BLOCK": 0,
+              "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+              "COMPILE_WASM_BLOCK": 0,
+              "COMPILE_WASM_LOOP": 0,
+              "COMPILE_DISPATCHER": 0,
+              "COMPILE_ENTRY_POINT": 0,
+              "COMPILE_WASM_TOTAL_BYTES": 0
+            }
+          }
+        ],
+        "total": {
+          "elapsed_ms": 38466.467598,
+          "compile_ms": 1812.6685080000043,
+          "generated_bytes": 15607094,
+          "modules": 167,
+          "stats": {
+            "COMPILE": 0,
+            "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 0,
+            "COMPILE_WRONG_ADDRESS_SPACE": 0,
+            "COMPILE_CUT_OFF_AT_END_OF_PAGE": 0,
+            "COMPILE_WITH_LOOP_SAFETY": 0,
+            "COMPILE_PAGE": 0,
+            "COMPILE_BASIC_BLOCK": 0,
+            "COMPILE_DUPLICATED_BASIC_BLOCK": 0,
+            "COMPILE_WASM_BLOCK": 0,
+            "COMPILE_WASM_LOOP": 0,
+            "COMPILE_DISPATCHER": 0,
+            "COMPILE_ENTRY_POINT": 0,
+            "COMPILE_WASM_TOTAL_BYTES": 0
+          }
+        },
+        "bytes_per_page": null
+      }
+    ]
+  },
+  "buildroot_profiler": {
+    "before": {
+      "wasm_path": "/tmp/v86-before-profiler.wasm",
+      "node": "v24.22.1",
+      "v8": "13.6.233.17-node.58",
+      "results": [
+        {
+          "phase": "boot",
+          "elapsed_ms": 3918.7492199999997,
+          "compile_ms": 2665.7393309999998,
+          "generated_bytes": 11763850,
+          "modules": 59,
+          "stats": {
+            "COMPILE": 59,
+            "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 4,
+            "COMPILE_WRONG_ADDRESS_SPACE": 0,
+            "COMPILE_CUT_OFF_AT_END_OF_PAGE": 66,
+            "COMPILE_WITH_LOOP_SAFETY": 1239,
+            "COMPILE_PAGE": 154,
+            "COMPILE_BASIC_BLOCK": 23172,
+            "COMPILE_DUPLICATED_BASIC_BLOCK": 2559,
+            "COMPILE_WASM_BLOCK": 13729,
+            "COMPILE_WASM_LOOP": 1252,
+            "COMPILE_DISPATCHER": 72,
+            "COMPILE_ENTRY_POINT": 4785,
+            "COMPILE_WASM_TOTAL_BYTES": 11763850
+          }
+        },
+        {
+          "phase": "warmup",
+          "elapsed_ms": 12452.334631000002,
+          "compile_ms": 766.7991700000084,
+          "generated_bytes": 10570933,
+          "modules": 50,
+          "stats": {
+            "COMPILE": 109,
+            "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 603,
+            "COMPILE_WRONG_ADDRESS_SPACE": 0,
+            "COMPILE_CUT_OFF_AT_END_OF_PAGE": 118,
+            "COMPILE_WITH_LOOP_SAFETY": 2188,
+            "COMPILE_PAGE": 292,
+            "COMPILE_BASIC_BLOCK": 46577,
+            "COMPILE_DUPLICATED_BASIC_BLOCK": 4756,
+            "COMPILE_WASM_BLOCK": 28098,
+            "COMPILE_WASM_LOOP": 2204,
+            "COMPILE_DISPATCHER": 125,
+            "COMPILE_ENTRY_POINT": 10471,
+            "COMPILE_WASM_TOTAL_BYTES": 22334783
+          }
+        },
+        {
+          "phase": "cpu",
+          "elapsed_ms": 4791.019287000003,
+          "compile_ms": 26.994140000009793,
+          "generated_bytes": 1091664,
+          "modules": 7,
+          "stats": {
+            "COMPILE": 116,
+            "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 603,
+            "COMPILE_WRONG_ADDRESS_SPACE": 0,
+            "COMPILE_CUT_OFF_AT_END_OF_PAGE": 124,
+            "COMPILE_WITH_LOOP_SAFETY": 2266,
+            "COMPILE_PAGE": 310,
+            "COMPILE_BASIC_BLOCK": 48678,
+            "COMPILE_DUPLICATED_BASIC_BLOCK": 4876,
+            "COMPILE_WASM_BLOCK": 29514,
+            "COMPILE_WASM_LOOP": 2282,
+            "COMPILE_DISPATCHER": 132,
+            "COMPILE_ENTRY_POINT": 11201,
+            "COMPILE_WASM_TOTAL_BYTES": 23426447
+          }
+        },
+        {
+          "phase": "program_start",
+          "elapsed_ms": 7053.285929999998,
+          "compile_ms": 54.61132099999304,
+          "generated_bytes": 2205536,
+          "modules": 13,
+          "stats": {
+            "COMPILE": 129,
+            "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 1202,
+            "COMPILE_WRONG_ADDRESS_SPACE": 0,
+            "COMPILE_CUT_OFF_AT_END_OF_PAGE": 138,
+            "COMPILE_WITH_LOOP_SAFETY": 2447,
+            "COMPILE_PAGE": 342,
+            "COMPILE_BASIC_BLOCK": 53823,
+            "COMPILE_DUPLICATED_BASIC_BLOCK": 5546,
+            "COMPILE_WASM_BLOCK": 32722,
+            "COMPILE_WASM_LOOP": 2463,
+            "COMPILE_DISPATCHER": 145,
+            "COMPILE_ENTRY_POINT": 12524,
+            "COMPILE_WASM_TOTAL_BYTES": 25631983
+          }
+        },
+        {
+          "phase": "cpu",
+          "elapsed_ms": 4800.640207,
+          "compile_ms": 11.817877000001317,
+          "generated_bytes": 625356,
+          "modules": 4,
+          "stats": {
+            "COMPILE": 133,
+            "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 1202,
+            "COMPILE_WRONG_ADDRESS_SPACE": 0,
+            "COMPILE_CUT_OFF_AT_END_OF_PAGE": 141,
+            "COMPILE_WITH_LOOP_SAFETY": 2462,
+            "COMPILE_PAGE": 352,
+            "COMPILE_BASIC_BLOCK": 55016,
+            "COMPILE_DUPLICATED_BASIC_BLOCK": 5580,
+            "COMPILE_WASM_BLOCK": 33472,
+            "COMPILE_WASM_LOOP": 2478,
+            "COMPILE_DISPATCHER": 149,
+            "COMPILE_ENTRY_POINT": 12816,
+            "COMPILE_WASM_TOTAL_BYTES": 26257339
+          }
+        },
+        {
+          "phase": "program_start",
+          "elapsed_ms": 7192.765635000003,
+          "compile_ms": 41.58468100000027,
+          "generated_bytes": 1956604,
+          "modules": 9,
+          "stats": {
+            "COMPILE": 144,
+            "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 1801,
+            "COMPILE_WRONG_ADDRESS_SPACE": 0,
+            "COMPILE_CUT_OFF_AT_END_OF_PAGE": 153,
+            "COMPILE_WITH_LOOP_SAFETY": 2654,
+            "COMPILE_PAGE": 383,
+            "COMPILE_BASIC_BLOCK": 60866,
+            "COMPILE_DUPLICATED_BASIC_BLOCK": 6089,
+            "COMPILE_WASM_BLOCK": 37167,
+            "COMPILE_WASM_LOOP": 2671,
+            "COMPILE_DISPATCHER": 161,
+            "COMPILE_ENTRY_POINT": 14316,
+            "COMPILE_WASM_TOTAL_BYTES": 28831245
+          }
+        },
+        {
+          "phase": "cpu",
+          "elapsed_ms": 5339.098732000006,
+          "compile_ms": 7.070767000004707,
+          "generated_bytes": 204141,
+          "modules": 1,
+          "stats": {
+            "COMPILE": 147,
+            "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 1801,
+            "COMPILE_WRONG_ADDRESS_SPACE": 0,
+            "COMPILE_CUT_OFF_AT_END_OF_PAGE": 155,
+            "COMPILE_WITH_LOOP_SAFETY": 2693,
+            "COMPILE_PAGE": 392,
+            "COMPILE_BASIC_BLOCK": 62369,
+            "COMPILE_DUPLICATED_BASIC_BLOCK": 6145,
+            "COMPILE_WASM_BLOCK": 38144,
+            "COMPILE_WASM_LOOP": 2710,
+            "COMPILE_DISPATCHER": 164,
+            "COMPILE_ENTRY_POINT": 14743,
+            "COMPILE_WASM_TOTAL_BYTES": 29510077
+          }
+        },
+        {
+          "phase": "program_start",
+          "elapsed_ms": 7337.936859000001,
+          "compile_ms": 18.940323000002536,
+          "generated_bytes": 716357,
+          "modules": 5,
+          "stats": {
+            "COMPILE": 152,
+            "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 2400,
+            "COMPILE_WRONG_ADDRESS_SPACE": 0,
+            "COMPILE_CUT_OFF_AT_END_OF_PAGE": 159,
+            "COMPILE_WITH_LOOP_SAFETY": 2762,
+            "COMPILE_PAGE": 405,
+            "COMPILE_BASIC_BLOCK": 64016,
+            "COMPILE_DUPLICATED_BASIC_BLOCK": 6290,
+            "COMPILE_WASM_BLOCK": 39203,
+            "COMPILE_WASM_LOOP": 2779,
+            "COMPILE_DISPATCHER": 169,
+            "COMPILE_ENTRY_POINT": 15240,
+            "COMPILE_WASM_TOTAL_BYTES": 30226434
+          }
+        },
+        {
+          "phase": "cpu",
+          "elapsed_ms": 4991.654459000005,
+          "compile_ms": 16.053334000003815,
+          "generated_bytes": 346245,
+          "modules": 2,
+          "stats": {
+            "COMPILE": 155,
+            "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 2400,
+            "COMPILE_WRONG_ADDRESS_SPACE": 0,
+            "COMPILE_CUT_OFF_AT_END_OF_PAGE": 161,
+            "COMPILE_WITH_LOOP_SAFETY": 2802,
+            "COMPILE_PAGE": 413,
+            "COMPILE_BASIC_BLOCK": 64971,
+            "COMPILE_DUPLICATED_BASIC_BLOCK": 6414,
+            "COMPILE_WASM_BLOCK": 39840,
+            "COMPILE_WASM_LOOP": 2819,
+            "COMPILE_DISPATCHER": 172,
+            "COMPILE_ENTRY_POINT": 15546,
+            "COMPILE_WASM_TOTAL_BYTES": 30673923
+          }
+        },
+        {
+          "phase": "program_start",
+          "elapsed_ms": 7776.386055999996,
+          "compile_ms": 25.83467299999029,
+          "generated_bytes": 304889,
+          "modules": 2,
+          "stats": {
+            "COMPILE": 158,
+            "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 3001,
+            "COMPILE_WRONG_ADDRESS_SPACE": 0,
+            "COMPILE_CUT_OFF_AT_END_OF_PAGE": 165,
+            "COMPILE_WITH_LOOP_SAFETY": 2831,
+            "COMPILE_PAGE": 420,
+            "COMPILE_BASIC_BLOCK": 66302,
+            "COMPILE_DUPLICATED_BASIC_BLOCK": 6446,
+            "COMPILE_WASM_BLOCK": 40694,
+            "COMPILE_WASM_LOOP": 2848,
+            "COMPILE_DISPATCHER": 175,
+            "COMPILE_ENTRY_POINT": 15926,
+            "COMPILE_WASM_TOTAL_BYTES": 31218386
+          }
+        },
+        {
+          "phase": "cpu",
+          "elapsed_ms": 4990.687947999992,
+          "compile_ms": 6.595290999990539,
+          "generated_bytes": 111588,
+          "modules": 2,
+          "stats": {
+            "COMPILE": 160,
+            "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 3001,
+            "COMPILE_WRONG_ADDRESS_SPACE": 0,
+            "COMPILE_CUT_OFF_AT_END_OF_PAGE": 167,
+            "COMPILE_WITH_LOOP_SAFETY": 2831,
+            "COMPILE_PAGE": 422,
+            "COMPILE_BASIC_BLOCK": 66310,
+            "COMPILE_DUPLICATED_BASIC_BLOCK": 6446,
+            "COMPILE_WASM_BLOCK": 40701,
+            "COMPILE_WASM_LOOP": 2848,
+            "COMPILE_DISPATCHER": 177,
+            "COMPILE_ENTRY_POINT": 15932,
+            "COMPILE_WASM_TOTAL_BYTES": 31329974
+          }
+        },
+        {
+          "phase": "program_start",
+          "elapsed_ms": 8086.757219000006,
+          "compile_ms": 5.26318499998888,
+          "generated_bytes": 91656,
+          "modules": 2,
+          "stats": {
+            "COMPILE": 162,
+            "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 3600,
+            "COMPILE_WRONG_ADDRESS_SPACE": 0,
+            "COMPILE_CUT_OFF_AT_END_OF_PAGE": 167,
+            "COMPILE_WITH_LOOP_SAFETY": 2841,
+            "COMPILE_PAGE": 425,
+            "COMPILE_BASIC_BLOCK": 66492,
+            "COMPILE_DUPLICATED_BASIC_BLOCK": 6464,
+            "COMPILE_WASM_BLOCK": 40833,
+            "COMPILE_WASM_LOOP": 2858,
+            "COMPILE_DISPATCHER": 179,
+            "COMPILE_ENTRY_POINT": 16009,
+            "COMPILE_WASM_TOTAL_BYTES": 31421630
+          }
+        }
+      ],
+      "total": {
+        "elapsed_ms": 79031.95654099999,
+        "compile_ms": 3677.1805440000044,
+        "generated_bytes": 31421630,
+        "modules": 162,
+        "stats": {
+          "COMPILE": 162,
+          "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 3600,
+          "COMPILE_WRONG_ADDRESS_SPACE": 0,
+          "COMPILE_CUT_OFF_AT_END_OF_PAGE": 167,
+          "COMPILE_WITH_LOOP_SAFETY": 2841,
+          "COMPILE_PAGE": 425,
+          "COMPILE_BASIC_BLOCK": 66492,
+          "COMPILE_DUPLICATED_BASIC_BLOCK": 6464,
+          "COMPILE_WASM_BLOCK": 40833,
+          "COMPILE_WASM_LOOP": 2858,
+          "COMPILE_DISPATCHER": 179,
+          "COMPILE_ENTRY_POINT": 16009,
+          "COMPILE_WASM_TOTAL_BYTES": 31421630
+        }
+      },
+      "bytes_per_page": 73933.24705882353
+    },
+    "after": {
+      "wasm_path": "/tmp/v86-after-profiler.wasm",
+      "node": "v24.22.1",
+      "v8": "13.6.233.17-node.58",
+      "results": [
+        {
+          "phase": "boot",
+          "elapsed_ms": 4117.379322000001,
+          "compile_ms": 2646.3991059999994,
+          "generated_bytes": 11596091,
+          "modules": 63,
+          "stats": {
+            "COMPILE": 63,
+            "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 4,
+            "COMPILE_WRONG_ADDRESS_SPACE": 0,
+            "COMPILE_CUT_OFF_AT_END_OF_PAGE": 68,
+            "COMPILE_WITH_LOOP_SAFETY": 1304,
+            "COMPILE_PAGE": 157,
+            "COMPILE_BASIC_BLOCK": 23182,
+            "COMPILE_DUPLICATED_BASIC_BLOCK": 2668,
+            "COMPILE_WASM_BLOCK": 13529,
+            "COMPILE_WASM_LOOP": 1317,
+            "COMPILE_DISPATCHER": 76,
+            "COMPILE_ENTRY_POINT": 4548,
+            "COMPILE_WASM_TOTAL_BYTES": 11596091
+          }
+        },
+        {
+          "phase": "warmup",
+          "elapsed_ms": 11694.427002,
+          "compile_ms": 776.4450129999977,
+          "generated_bytes": 10410162,
+          "modules": 48,
+          "stats": {
+            "COMPILE": 111,
+            "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 602,
+            "COMPILE_WRONG_ADDRESS_SPACE": 0,
+            "COMPILE_CUT_OFF_AT_END_OF_PAGE": 126,
+            "COMPILE_WITH_LOOP_SAFETY": 2239,
+            "COMPILE_PAGE": 290,
+            "COMPILE_BASIC_BLOCK": 45959,
+            "COMPILE_DUPLICATED_BASIC_BLOCK": 4910,
+            "COMPILE_WASM_BLOCK": 27603,
+            "COMPILE_WASM_LOOP": 2255,
+            "COMPILE_DISPATCHER": 127,
+            "COMPILE_ENTRY_POINT": 10124,
+            "COMPILE_WASM_TOTAL_BYTES": 22006253
+          }
+        },
+        {
+          "phase": "cpu",
+          "elapsed_ms": 4596.037066999999,
+          "compile_ms": 31.606684999998834,
+          "generated_bytes": 1399334,
+          "modules": 8,
+          "stats": {
+            "COMPILE": 119,
+            "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 602,
+            "COMPILE_WRONG_ADDRESS_SPACE": 0,
+            "COMPILE_CUT_OFF_AT_END_OF_PAGE": 133,
+            "COMPILE_WITH_LOOP_SAFETY": 2368,
+            "COMPILE_PAGE": 313,
+            "COMPILE_BASIC_BLOCK": 49103,
+            "COMPILE_DUPLICATED_BASIC_BLOCK": 5164,
+            "COMPILE_WASM_BLOCK": 29585,
+            "COMPILE_WASM_LOOP": 2384,
+            "COMPILE_DISPATCHER": 135,
+            "COMPILE_ENTRY_POINT": 10958,
+            "COMPILE_WASM_TOTAL_BYTES": 23405587
+          }
+        },
+        {
+          "phase": "program_start",
+          "elapsed_ms": 6988.872638000001,
+          "compile_ms": 55.294637000002695,
+          "generated_bytes": 1973815,
+          "modules": 13,
+          "stats": {
+            "COMPILE": 132,
+            "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 1201,
+            "COMPILE_WRONG_ADDRESS_SPACE": 0,
+            "COMPILE_CUT_OFF_AT_END_OF_PAGE": 145,
+            "COMPILE_WITH_LOOP_SAFETY": 2537,
+            "COMPILE_PAGE": 340,
+            "COMPILE_BASIC_BLOCK": 53830,
+            "COMPILE_DUPLICATED_BASIC_BLOCK": 5723,
+            "COMPILE_WASM_BLOCK": 32526,
+            "COMPILE_WASM_LOOP": 2553,
+            "COMPILE_DISPATCHER": 148,
+            "COMPILE_ENTRY_POINT": 12164,
+            "COMPILE_WASM_TOTAL_BYTES": 25379402
+          }
+        },
+        {
+          "phase": "cpu",
+          "elapsed_ms": 4593.959026999997,
+          "compile_ms": 13.646268999997119,
+          "generated_bytes": 793928,
+          "modules": 5,
+          "stats": {
+            "COMPILE": 137,
+            "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 1201,
+            "COMPILE_WRONG_ADDRESS_SPACE": 0,
+            "COMPILE_CUT_OFF_AT_END_OF_PAGE": 150,
+            "COMPILE_WITH_LOOP_SAFETY": 2563,
+            "COMPILE_PAGE": 353,
+            "COMPILE_BASIC_BLOCK": 55424,
+            "COMPILE_DUPLICATED_BASIC_BLOCK": 5739,
+            "COMPILE_WASM_BLOCK": 33637,
+            "COMPILE_WASM_LOOP": 2579,
+            "COMPILE_DISPATCHER": 153,
+            "COMPILE_ENTRY_POINT": 12694,
+            "COMPILE_WASM_TOTAL_BYTES": 26173330
+          }
+        },
+        {
+          "phase": "program_start",
+          "elapsed_ms": 7415.970297,
+          "compile_ms": 36.07323600000382,
+          "generated_bytes": 2023568,
+          "modules": 10,
+          "stats": {
+            "COMPILE": 150,
+            "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 1801,
+            "COMPILE_WRONG_ADDRESS_SPACE": 0,
+            "COMPILE_CUT_OFF_AT_END_OF_PAGE": 161,
+            "COMPILE_WITH_LOOP_SAFETY": 2716,
+            "COMPILE_PAGE": 389,
+            "COMPILE_BASIC_BLOCK": 61422,
+            "COMPILE_DUPLICATED_BASIC_BLOCK": 6116,
+            "COMPILE_WASM_BLOCK": 37486,
+            "COMPILE_WASM_LOOP": 2733,
+            "COMPILE_DISPATCHER": 167,
+            "COMPILE_ENTRY_POINT": 14376,
+            "COMPILE_WASM_TOTAL_BYTES": 28807088
+          }
+        },
+        {
+          "phase": "cpu",
+          "elapsed_ms": 4310.7189419999995,
+          "compile_ms": 0,
+          "generated_bytes": 0,
+          "modules": 0,
+          "stats": {
+            "COMPILE": 152,
+            "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 1801,
+            "COMPILE_WRONG_ADDRESS_SPACE": 0,
+            "COMPILE_CUT_OFF_AT_END_OF_PAGE": 163,
+            "COMPILE_WITH_LOOP_SAFETY": 2744,
+            "COMPILE_PAGE": 395,
+            "COMPILE_BASIC_BLOCK": 62600,
+            "COMPILE_DUPLICATED_BASIC_BLOCK": 6263,
+            "COMPILE_WASM_BLOCK": 38205,
+            "COMPILE_WASM_LOOP": 2761,
+            "COMPILE_DISPATCHER": 169,
+            "COMPILE_ENTRY_POINT": 14680,
+            "COMPILE_WASM_TOTAL_BYTES": 29316826
+          }
+        },
+        {
+          "phase": "program_start",
+          "elapsed_ms": 7217.568444999997,
+          "compile_ms": 68.32215400000132,
+          "generated_bytes": 335393,
+          "modules": 4,
+          "stats": {
+            "COMPILE": 156,
+            "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 2400,
+            "COMPILE_WRONG_ADDRESS_SPACE": 0,
+            "COMPILE_CUT_OFF_AT_END_OF_PAGE": 164,
+            "COMPILE_WITH_LOOP_SAFETY": 2752,
+            "COMPILE_PAGE": 402,
+            "COMPILE_BASIC_BLOCK": 63368,
+            "COMPILE_DUPLICATED_BASIC_BLOCK": 6263,
+            "COMPILE_WASM_BLOCK": 38706,
+            "COMPILE_WASM_LOOP": 2769,
+            "COMPILE_DISPATCHER": 173,
+            "COMPILE_ENTRY_POINT": 14914,
+            "COMPILE_WASM_TOTAL_BYTES": 29652219
+          }
+        },
+        {
+          "phase": "cpu",
+          "elapsed_ms": 4381.0233540000045,
+          "compile_ms": 14.646465999998327,
+          "generated_bytes": 732023,
+          "modules": 3,
+          "stats": {
+            "COMPILE": 160,
+            "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 2400,
+            "COMPILE_WRONG_ADDRESS_SPACE": 0,
+            "COMPILE_CUT_OFF_AT_END_OF_PAGE": 171,
+            "COMPILE_WITH_LOOP_SAFETY": 2832,
+            "COMPILE_PAGE": 414,
+            "COMPILE_BASIC_BLOCK": 65487,
+            "COMPILE_DUPLICATED_BASIC_BLOCK": 6444,
+            "COMPILE_WASM_BLOCK": 40086,
+            "COMPILE_WASM_LOOP": 2849,
+            "COMPILE_DISPATCHER": 177,
+            "COMPILE_ENTRY_POINT": 15511,
+            "COMPILE_WASM_TOTAL_BYTES": 30594035
+          }
+        },
+        {
+          "phase": "program_start",
+          "elapsed_ms": 7922.542112999996,
+          "compile_ms": 7.98171999999613,
+          "generated_bytes": 378081,
+          "modules": 2,
+          "stats": {
+            "COMPILE": 163,
+            "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 3000,
+            "COMPILE_WRONG_ADDRESS_SPACE": 0,
+            "COMPILE_CUT_OFF_AT_END_OF_PAGE": 175,
+            "COMPILE_WITH_LOOP_SAFETY": 2863,
+            "COMPILE_PAGE": 423,
+            "COMPILE_BASIC_BLOCK": 66971,
+            "COMPILE_DUPLICATED_BASIC_BLOCK": 6487,
+            "COMPILE_WASM_BLOCK": 41030,
+            "COMPILE_WASM_LOOP": 2880,
+            "COMPILE_DISPATCHER": 180,
+            "COMPILE_ENTRY_POINT": 15946,
+            "COMPILE_WASM_TOTAL_BYTES": 31207818
+          }
+        },
+        {
+          "phase": "cpu",
+          "elapsed_ms": 4398.122342000002,
+          "compile_ms": 2.3051609999965876,
+          "generated_bytes": 105165,
+          "modules": 1,
+          "stats": {
+            "COMPILE": 164,
+            "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 3000,
+            "COMPILE_WRONG_ADDRESS_SPACE": 0,
+            "COMPILE_CUT_OFF_AT_END_OF_PAGE": 176,
+            "COMPILE_WITH_LOOP_SAFETY": 2863,
+            "COMPILE_PAGE": 424,
+            "COMPILE_BASIC_BLOCK": 66972,
+            "COMPILE_DUPLICATED_BASIC_BLOCK": 6487,
+            "COMPILE_WASM_BLOCK": 41031,
+            "COMPILE_WASM_LOOP": 2880,
+            "COMPILE_DISPATCHER": 181,
+            "COMPILE_ENTRY_POINT": 15947,
+            "COMPILE_WASM_TOTAL_BYTES": 31312983
+          }
+        },
+        {
+          "phase": "program_start",
+          "elapsed_ms": 7597.7206850000075,
+          "compile_ms": 6.332436000011512,
+          "generated_bytes": 196864,
+          "modules": 2,
+          "stats": {
+            "COMPILE": 167,
+            "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 3599,
+            "COMPILE_WRONG_ADDRESS_SPACE": 0,
+            "COMPILE_CUT_OFF_AT_END_OF_PAGE": 179,
+            "COMPILE_WITH_LOOP_SAFETY": 2910,
+            "COMPILE_PAGE": 431,
+            "COMPILE_BASIC_BLOCK": 67983,
+            "COMPILE_DUPLICATED_BASIC_BLOCK": 6604,
+            "COMPILE_WASM_BLOCK": 41682,
+            "COMPILE_WASM_LOOP": 2927,
+            "COMPILE_DISPATCHER": 184,
+            "COMPILE_ENTRY_POINT": 16253,
+            "COMPILE_WASM_TOTAL_BYTES": 31720013
+          }
+        }
+      ],
+      "total": {
+        "elapsed_ms": 75580.885231,
+        "compile_ms": 3731.078593000016,
+        "generated_bytes": 31720013,
+        "modules": 167,
+        "stats": {
+          "COMPILE": 167,
+          "COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS": 3599,
+          "COMPILE_WRONG_ADDRESS_SPACE": 0,
+          "COMPILE_CUT_OFF_AT_END_OF_PAGE": 179,
+          "COMPILE_WITH_LOOP_SAFETY": 2910,
+          "COMPILE_PAGE": 431,
+          "COMPILE_BASIC_BLOCK": 67983,
+          "COMPILE_DUPLICATED_BASIC_BLOCK": 6604,
+          "COMPILE_WASM_BLOCK": 41682,
+          "COMPILE_WASM_LOOP": 2927,
+          "COMPILE_DISPATCHER": 184,
+          "COMPILE_ENTRY_POINT": 16253,
+          "COMPILE_WASM_TOTAL_BYTES": 31720013
+        }
+      },
+      "bytes_per_page": 73596.31786542923
+    }
+  },
+  "pod_ab": {
+    "nginx": "/tmp/v86-pod-before: median done 1125 ms, cpu 1110 ms (5 rounds)\n/tmp/v86-pod-after: median done 1174 ms, cpu 1170 ms (5 rounds)\n",
+    "cpu": "/tmp/v86-pod-after: median done 5718 ms, cpu 5690 ms (5 rounds)\n/tmp/v86-pod-before: median done 5758 ms, cpu 5740 ms (5 rounds)\n"
+  },
+  "pod_other_rounds": {
+    "nginx_before": "boot ready 480 ms 11.5M instr\nnginx round 0: restore 33 ms, started 48 ms, done 1128 ms, cpu 1130 ms, 52.5M instr, 46.6M instr/s\nnginx round 1: restore 11 ms, started 47 ms, done 1149 ms, cpu 1140 ms, 52.8M instr, 45.9M instr/s\nnginx round 2: restore 9 ms, started 45 ms, done 1218 ms, cpu 1210 ms, 52.6M instr, 43.2M instr/s\nMEDIAN nginx: done 1149 ms, cpu 1140 ms, started 47 ms, 52.6M instr, 45.9 Mips\n",
+    "nginx_before-metrics": "JIT_METRICS {\"bytes\":852736,\"modules\":10,\"compile_ms\":105.31121500000003,\"pages\":0,\"bytes_per_page\":null}\nboot ready 330 ms 11.4M instr\nJIT_METRICS {\"bytes\":4016391,\"modules\":46,\"compile_ms\":683.983371,\"pages\":0,\"bytes_per_page\":null}\nnginx round 0: restore 10 ms, started 50 ms, done 1142 ms, cpu 1140 ms, 52.6M instr, 46.1M instr/s\nJIT_METRICS {\"bytes\":4490025,\"modules\":48,\"compile_ms\":578.1944589999994,\"pages\":0,\"bytes_per_page\":null}\nnginx round 1: restore 10 ms, started 48 ms, done 1112 ms, cpu 1100 ms, 52.6M instr, 47.3M instr/s\nJIT_METRICS {\"bytes\":4117614,\"modules\":47,\"compile_ms\":476.5304470000019,\"pages\":0,\"bytes_per_page\":null}\nnginx round 2: restore 11 ms, started 43 ms, done 951 ms, cpu 940 ms, 52.6M instr, 55.3M instr/s\nMEDIAN nginx: done 1112 ms, cpu 1100 ms, started 48 ms, 52.6M instr, 47.3 Mips\n",
+    "nginx_before-profiler": "JIT_METRICS {\"bytes\":1829515,\"modules\":11,\"compile_ms\":310.4071240000001,\"pages\":29,\"bytes_per_page\":63086.724137931036}\nboot ready 594 ms 11.5M instr\nCOMPILE=20\nCOMPILE_CUT_OFF_AT_END_OF_PAGE=15\nCOMPILE_WITH_LOOP_SAFETY=356\nCOMPILE_PAGE=58\nCOMPILE_BASIC_BLOCK=7991\nCOMPILE_DUPLICATED_BASIC_BLOCK=1110\nCOMPILE_WASM_BLOCK=4626\nCOMPILE_WASM_LOOP=358\nCOMPILE_DISPATCHER=22\nCOMPILE_ENTRY_POINT=1501\nCOMPILE_WASM_TOTAL_BYTES=4090603\nRUN_INTERPRETED=2074519\nRUN_INTERPRETED_NEW_PAGE=1188\nRUN_INTERPRETED_PAGE_HAS_CODE=679\nRUN_INTERPRETED_PAGE_HAS_ENTRY_AFTER_PAGE_WALK=58\nRUN_INTERPRETED_NEAR_END_OF_PAGE=1276\nRUN_INTERPRETED_STEPS=36178482\nRUN_FROM_CACHE=270020\nRUN_FROM_CACHE_STEPS=16471977\nDIRECT_EXIT=122451\nINDIRECT_JUMP=224867\nINDIRECT_JUMP_NO_ENTRY=127006\nNORMAL_PAGE_CHANGE=52509\nNORMAL_FALLTHRU=336246\nNORMAL_FALLTHRU_WITH_TARGET_BLOCK=7172\nNORMAL_BRANCH=179997\nNORMAL_BRANCH_WITH_TARGET_BLOCK=43867\nCONDITIONAL_JUMP=2363366\nCONDITIONAL_JUMP_PAGE_CHANGE=4220\nCONDITIONAL_JUMP_EXIT=2192\nCONDITIONAL_JUMP_FALLTHRU=1104778\nCONDITIONAL_JUMP_BRANCH=1207681\nCONDITIONAL_JUMP_BRANCH_WITH_TARGET_BLOCK=48715\nDISPATCHER_SMALL=62010\nDISPATCHER_LARGE=405721\nLOOP=456684\nLOOP_SAFETY=356834\nCONDITION_OPTIMISED=2676968\nCONDITION_UNOPTIMISED=354764\nCONDITION_UNOPTIMISED_PF=100\nSAFE_READ_FAST=4807294\nSAFE_READ_SLOW_NOT_VALID=739\nSAFE_WRITE_FAST=2408427\nSAFE_WRITE_SLOW_NOT_VALID=89\nSAFE_WRITE_SLOW_READ_ONLY=6\nSAFE_READ_WRITE_FAST=317707\nSAFE_READ_WRITE_SLOW_NOT_VALID=205\nSAFE_READ_WRITE_SLOW_READ_ONLY=3\nPAGE_FAULT=1637\nTLB_MISS=11487\nMAIN_LOOP=687\nDO_MANY_CYCLES=724\nCYCLE_INTERNAL=2345167\nINVALIDATE_MODULE_UNUSED_AFTER_OVERWRITE=1\nDIRTY_PAGE_DID_NOT_HAVE_CODE=41522\nRUN_FROM_CACHE_EXIT_SAME_PAGE=41696\nRUN_FROM_CACHE_EXIT_NEAR_END_OF_PAGE=8961\nRUN_FROM_CACHE_EXIT_DIFFERENT_PAGE=219363\nCLEAR_TLB=165\nMODRM_SIMPLE_REG=12513\nMODRM_SIMPLE_REG_WITH_OFFSET=4357497\nMODRM_SIMPLE_CONST_OFFSET=218966\nMODRM_COMPLEX=370633\nSEG_OFFSET_OPTIMISED=4709162\nSEG_OFFSET_NOT_OPTIMISED=1885\nSEG_OFFSET_NOT_OPTIMISED_ES=1451\nSEG_OFFSET_NOT_OPTIMISED_GS=434\nJIT_METRICS {\"bytes\":4090603,\"modules\":20,\"compile_ms\":948.6190220000003,\"pages\":58,\"bytes_per_page\":70527.63793103448}\nnginx round 0: restore 11 ms, started 48 ms, done 1249 ms, cpu 1250 ms, 52.7M instr, 42.2M instr/s\nMEDIAN nginx: done 1249 ms, cpu 1250 ms, started 48 ms, 52.7M instr, 42.2 Mips\n",
+    "nginx_after": "boot ready 551 ms 11.4M instr\nnginx round 0: restore 23 ms, started 78 ms, done 1343 ms, cpu 1330 ms, 52.9M instr, 39.3M instr/s\nnginx round 1: restore 9 ms, started 43 ms, done 1077 ms, cpu 1080 ms, 52.7M instr, 48.9M instr/s\nnginx round 2: restore 17 ms, started 45 ms, done 1121 ms, cpu 1120 ms, 52.7M instr, 47.0M instr/s\nMEDIAN nginx: done 1121 ms, cpu 1120 ms, started 45 ms, 52.7M instr, 47.0 Mips\n",
+    "nginx_after-metrics": "JIT_METRICS {\"bytes\":822424,\"modules\":10,\"compile_ms\":119.75877800000004,\"pages\":0,\"bytes_per_page\":null}\nboot ready 340 ms 11.4M instr\nJIT_METRICS {\"bytes\":4519275,\"modules\":49,\"compile_ms\":703.1018900000003,\"pages\":0,\"bytes_per_page\":null}\nnginx round 0: restore 10 ms, started 52 ms, done 1282 ms, cpu 1270 ms, 52.8M instr, 41.2M instr/s\nJIT_METRICS {\"bytes\":4447689,\"modules\":50,\"compile_ms\":552.5749330000035,\"pages\":0,\"bytes_per_page\":null}\nnginx round 1: restore 9 ms, started 50 ms, done 1145 ms, cpu 1140 ms, 52.7M instr, 46.0M instr/s\nJIT_METRICS {\"bytes\":4088033,\"modules\":47,\"compile_ms\":664.6084510000001,\"pages\":0,\"bytes_per_page\":null}\nnginx round 2: restore 11 ms, started 47 ms, done 1286 ms, cpu 1270 ms, 52.9M instr, 41.1M instr/s\nMEDIAN nginx: done 1282 ms, cpu 1270 ms, started 50 ms, 52.8M instr, 41.2 Mips\n",
+    "nginx_after-profiler": "JIT_METRICS {\"bytes\":1954845,\"modules\":11,\"compile_ms\":129.2608390000001,\"pages\":31,\"bytes_per_page\":63059.51612903226}\nboot ready 467 ms 11.5M instr\nCOMPILE=31\nCOMPILE_CUT_OFF_AT_END_OF_PAGE=34\nCOMPILE_WITH_LOOP_SAFETY=471\nCOMPILE_PAGE=91\nCOMPILE_BASIC_BLOCK=12997\nCOMPILE_DUPLICATED_BASIC_BLOCK=1152\nCOMPILE_WASM_BLOCK=7893\nCOMPILE_WASM_LOOP=473\nCOMPILE_DISPATCHER=33\nCOMPILE_ENTRY_POINT=2970\nCOMPILE_WASM_TOTAL_BYTES=6323197\nRUN_INTERPRETED=2000521\nRUN_INTERPRETED_NEW_PAGE=1191\nRUN_INTERPRETED_PAGE_HAS_CODE=1521\nRUN_INTERPRETED_PAGE_HAS_ENTRY_AFTER_PAGE_WALK=62\nRUN_INTERPRETED_NEAR_END_OF_PAGE=4139\nRUN_INTERPRETED_STEPS=33951826\nRUN_FROM_CACHE=333744\nRUN_FROM_CACHE_STEPS=19061883\nDIRECT_EXIT=143872\nINDIRECT_JUMP=283170\nINDIRECT_JUMP_NO_ENTRY=166635\nNORMAL_PAGE_CHANGE=59524\nNORMAL_FALLTHRU=390545\nNORMAL_FALLTHRU_WITH_TARGET_BLOCK=7176\nNORMAL_BRANCH=212757\nNORMAL_BRANCH_WITH_TARGET_BLOCK=44299\nCONDITIONAL_JUMP=2646950\nCONDITIONAL_JUMP_PAGE_CHANGE=5254\nCONDITIONAL_JUMP_EXIT=4412\nCONDITIONAL_JUMP_FALLTHRU=1211090\nCONDITIONAL_JUMP_BRANCH=1382451\nCONDITIONAL_JUMP_BRANCH_WITH_TARGET_BLOCK=48997\nDISPATCHER_SMALL=60952\nDISPATCHER_LARGE=489895\nLOOP=565874\nLOOP_SAFETY=465306\nCONDITION_OPTIMISED=2975094\nCONDITION_UNOPTIMISED=396772\nCONDITION_UNOPTIMISED_PF=109\nSAFE_READ_FAST=5461232\nSAFE_READ_SLOW_NOT_VALID=714\nSAFE_WRITE_FAST=2804167\nSAFE_WRITE_SLOW_NOT_VALID=150\nSAFE_WRITE_SLOW_READ_ONLY=16\nSAFE_READ_WRITE_FAST=343427\nSAFE_READ_WRITE_SLOW_NOT_VALID=205\nSAFE_READ_WRITE_SLOW_READ_ONLY=5\nPAGE_FAULT=1651\nTLB_MISS=11948\nMAIN_LOOP=706\nDO_MANY_CYCLES=735\nCYCLE_INTERNAL=2334895\nINVALIDATE_MODULE_UNUSED_AFTER_OVERWRITE=1\nDIRTY_PAGE_DID_NOT_HAVE_CODE=40697\nRUN_FROM_CACHE_EXIT_SAME_PAGE=42861\nRUN_FROM_CACHE_EXIT_NEAR_END_OF_PAGE=11085\nRUN_FROM_CACHE_EXIT_DIFFERENT_PAGE=279798\nCLEAR_TLB=152\nMODRM_SIMPLE_REG=14314\nMODRM_SIMPLE_REG_WITH_OFFSET=4753794\nMODRM_SIMPLE_CONST_OFFSET=246002\nMODRM_COMPLEX=448428\nSEG_OFFSET_OPTIMISED=5173885\nSEG_OFFSET_NOT_OPTIMISED=3964\nSEG_OFFSET_NOT_OPTIMISED_ES=1550\nSEG_OFFSET_NOT_OPTIMISED_GS=2414\nJIT_METRICS {\"bytes\":6323197,\"modules\":31,\"compile_ms\":1225.1017559999996,\"pages\":91,\"bytes_per_page\":69485.68131868132}\nnginx round 0: restore 13 ms, started 55 ms, done 1737 ms, cpu 1720 ms, 53.0M instr, 30.5M instr/s\nMEDIAN nginx: done 1737 ms, cpu 1720 ms, started 55 ms, 53.0M instr, 30.5 Mips\n",
+    "cpu_before": "boot ready 401 ms 11.4M instr\ncpu round 0: restore 10 ms, started 42 ms, done 5988 ms, cpu 5980 ms, 2427.3M instr, 405.4M instr/s\ncpu round 1: restore 13 ms, started 40 ms, done 5868 ms, cpu 5840 ms, 2427.4M instr, 413.7M instr/s\ncpu round 2: restore 12 ms, started 37 ms, done 5904 ms, cpu 5890 ms, 2427.4M instr, 411.1M instr/s\nMEDIAN cpu: done 5904 ms, cpu 5890 ms, started 40 ms, 2427.4M instr, 411.1 Mips\n",
+    "cpu_before-metrics": "JIT_METRICS {\"bytes\":857561,\"modules\":10,\"compile_ms\":99.33834400000012,\"pages\":0,\"bytes_per_page\":null}\nboot ready 435 ms 11.4M instr\nJIT_METRICS {\"bytes\":5432070,\"modules\":75,\"compile_ms\":446.2046100000008,\"pages\":0,\"bytes_per_page\":null}\ncpu round 0: restore 16 ms, started 44 ms, done 5988 ms, cpu 5980 ms, 2427.1M instr, 405.3M instr/s\nJIT_METRICS {\"bytes\":5484453,\"modules\":75,\"compile_ms\":447.43133700000544,\"pages\":0,\"bytes_per_page\":null}\ncpu round 1: restore 13 ms, started 37 ms, done 5981 ms, cpu 5960 ms, 2427.2M instr, 405.8M instr/s\nJIT_METRICS {\"bytes\":5457024,\"modules\":77,\"compile_ms\":549.0266050000118,\"pages\":0,\"bytes_per_page\":null}\ncpu round 2: restore 14 ms, started 42 ms, done 5871 ms, cpu 5850 ms, 2427.2M instr, 413.4M instr/s\nMEDIAN cpu: done 5981 ms, cpu 5960 ms, started 42 ms, 2427.2M instr, 405.8 Mips\n",
+    "cpu_before-profiler": "JIT_METRICS {\"bytes\":1644584,\"modules\":10,\"compile_ms\":103.502816,\"pages\":27,\"bytes_per_page\":60910.51851851852}\nboot ready 351 ms 11.4M instr\nCOMPILE=75\nCOMPILE_SKIPPED_NO_NEW_ENTRY_POINTS=3\nCOMPILE_CUT_OFF_AT_END_OF_PAGE=57\nCOMPILE_WITH_LOOP_SAFETY=908\nCOMPILE_PAGE=190\nCOMPILE_BASIC_BLOCK=22071\nCOMPILE_DUPLICATED_BASIC_BLOCK=1819\nCOMPILE_WASM_BLOCK=13744\nCOMPILE_WASM_LOOP=911\nCOMPILE_DISPATCHER=78\nCOMPILE_ENTRY_POINT=5274\nCOMPILE_WASM_TOTAL_BYTES=10428275\nRUN_INTERPRETED=2354882\nRUN_INTERPRETED_NEW_PAGE=568\nRUN_INTERPRETED_PAGE_HAS_CODE=5684\nRUN_INTERPRETED_PAGE_HAS_ENTRY_AFTER_PAGE_WALK=2401\nRUN_INTERPRETED_NEAR_END_OF_PAGE=319268\nRUN_INTERPRETED_STEPS=41439466\nRUN_FROM_CACHE=50890098\nRUN_FROM_CACHE_STEPS=2388682265\nDIRECT_EXIT=24856359\nINDIRECT_JUMP=40650560\nINDIRECT_JUMP_NO_ENTRY=25383712\nNORMAL_PAGE_CHANGE=3254399\nNORMAL_FALLTHRU=35170421\nNORMAL_FALLTHRU_WITH_TARGET_BLOCK=58367\nNORMAL_BRANCH=53326217\nNORMAL_BRANCH_WITH_TARGET_BLOCK=349085\nCONDITIONAL_JUMP=262701648\nCONDITIONAL_JUMP_PAGE_CHANGE=191992\nCONDITIONAL_JUMP_EXIT=481407\nCONDITIONAL_JUMP_FALLTHRU=121847653\nCONDITIONAL_JUMP_BRANCH=140254106\nCONDITIONAL_JUMP_BRANCH_WITH_TARGET_BLOCK=118482\nDISPATCHER_SMALL=121857\nDISPATCHER_LARGE=66561352\nLOOP=98423607\nLOOP_SAFETY=97897344\nCONDITION_OPTIMISED=282538069\nCONDITION_UNOPTIMISED=63368924\nSAFE_READ_FAST=804145531\nSAFE_READ_SLOW_NOT_VALID=2629\nSAFE_WRITE_FAST=345531733\nSAFE_WRITE_SLOW_NOT_VALID=453\nSAFE_WRITE_SLOW_READ_ONLY=652\nSAFE_READ_WRITE_FAST=53717145\nSAFE_READ_WRITE_SLOW_NOT_VALID=90\nSAFE_READ_WRITE_SLOW_READ_ONLY=10\nPAGE_FAULT=607\nTLB_MISS=13470\nMAIN_LOOP=12316\nDO_MANY_CYCLES=27456\nCYCLE_INTERNAL=53247507\nINVALIDATE_MODULE_UNUSED_AFTER_OVERWRITE=2\nDIRTY_PAGE_DID_NOT_HAVE_CODE=51695\nRUN_FROM_CACHE_EXIT_SAME_PAGE=1477954\nRUN_FROM_CACHE_EXIT_NEAR_END_OF_PAGE=330192\nRUN_FROM_CACHE_EXIT_DIFFERENT_PAGE=49081952\nCLEAR_TLB=361\nMODRM_SIMPLE_REG=74803\nMODRM_SIMPLE_REG_WITH_OFFSET=728272699\nMODRM_SIMPLE_CONST_OFFSET=5041562\nMODRM_COMPLEX=194590688\nSEG_OFFSET_OPTIMISED=852785814\nSEG_OFFSET_NOT_OPTIMISED=2824561\nSEG_OFFSET_NOT_OPTIMISED_ES=495543\nSEG_OFFSET_NOT_OPTIMISED_GS=2329018\nJIT_METRICS {\"bytes\":10428275,\"modules\":75,\"compile_ms\":1708.2540090000039,\"pages\":190,\"bytes_per_page\":54885.65789473684}\ncpu round 0: restore 12 ms, started 45 ms, done 13979 ms, cpu 13930 ms, 2430.1M instr, 173.8M instr/s\nMEDIAN cpu: done 13979 ms, cpu 13930 ms, started 45 ms, 2430.1M instr, 173.8 Mips\n",
+    "cpu_after": "boot ready 352 ms 11.4M instr\ncpu round 0: restore 8 ms, started 42 ms, done 5722 ms, cpu 5710 ms, 2427.3M instr, 424.2M instr/s\ncpu round 1: restore 11 ms, started 36 ms, done 5744 ms, cpu 5730 ms, 2427.5M instr, 422.6M instr/s\ncpu round 2: restore 9 ms, started 42 ms, done 5662 ms, cpu 5640 ms, 2427.0M instr, 428.6M instr/s\nMEDIAN cpu: done 5722 ms, cpu 5710 ms, started 42 ms, 2427.3M instr, 424.2 Mips\n",
+    "cpu_after-metrics": "JIT_METRICS {\"bytes\":935511,\"modules\":11,\"compile_ms\":100.85021099999992,\"pages\":0,\"bytes_per_page\":null}\nboot ready 333 ms 11.4M instr\nJIT_METRICS {\"bytes\":5367959,\"modules\":76,\"compile_ms\":467.585620000002,\"pages\":0,\"bytes_per_page\":null}\ncpu round 0: restore 14 ms, started 43 ms, done 5774 ms, cpu 5770 ms, 2427.5M instr, 420.4M instr/s\nJIT_METRICS {\"bytes\":5497053,\"modules\":78,\"compile_ms\":589.4005949999973,\"pages\":0,\"bytes_per_page\":null}\ncpu round 1: restore 7 ms, started 41 ms, done 6054 ms, cpu 6030 ms, 2427.2M instr, 400.9M instr/s\nJIT_METRICS {\"bytes\":5243177,\"modules\":76,\"compile_ms\":679.0939250000192,\"pages\":0,\"bytes_per_page\":null}\ncpu round 2: restore 8 ms, started 41 ms, done 6311 ms, cpu 6290 ms, 2427.3M instr, 384.6M instr/s\nMEDIAN cpu: done 6054 ms, cpu 6030 ms, started 41 ms, 2427.3M instr, 400.9 Mips\n",
+    "cpu_after-profiler": "JIT_METRICS {\"bytes\":1918483,\"modules\":10,\"compile_ms\":140.721895,\"pages\":28,\"bytes_per_page\":68517.25}\nboot ready 369 ms 11.4M instr\nCOMPILE=72\nCOMPILE_SKIPPED_NO_NEW_ENTRY_POINTS=3\nCOMPILE_CUT_OFF_AT_END_OF_PAGE=57\nCOMPILE_WITH_LOOP_SAFETY=913\nCOMPILE_PAGE=186\nCOMPILE_BASIC_BLOCK=22108\nCOMPILE_DUPLICATED_BASIC_BLOCK=1831\nCOMPILE_WASM_BLOCK=13769\nCOMPILE_WASM_LOOP=915\nCOMPILE_DISPATCHER=74\nCOMPILE_ENTRY_POINT=5302\nCOMPILE_WASM_TOTAL_BYTES=10275795\nRUN_INTERPRETED=2340483\nRUN_INTERPRETED_NEW_PAGE=567\nRUN_INTERPRETED_PAGE_HAS_CODE=5296\nRUN_INTERPRETED_PAGE_HAS_ENTRY_AFTER_PAGE_WALK=2168\nRUN_INTERPRETED_NEAR_END_OF_PAGE=320310\nRUN_INTERPRETED_STEPS=37199740\nRUN_FROM_CACHE=44869571\nRUN_FROM_CACHE_STEPS=2392225678\nDIRECT_EXIT=21371665\nINDIRECT_JUMP=40652459\nINDIRECT_JUMP_NO_ENTRY=22791785\nNORMAL_PAGE_CHANGE=6733554\nNORMAL_FALLTHRU=34888349\nNORMAL_FALLTHRU_WITH_TARGET_BLOCK=413\nNORMAL_BRANCH=56707907\nNORMAL_BRANCH_WITH_TARGET_BLOCK=1084\nCONDITIONAL_JUMP=263468535\nCONDITIONAL_JUMP_PAGE_CHANGE=132138\nCONDITIONAL_JUMP_EXIT=538127\nCONDITIONAL_JUMP_FALLTHRU=122410503\nCONDITIONAL_JUMP_BRANCH=140517052\nCONDITIONAL_JUMP_BRANCH_WITH_TARGET_BLOCK=2853\nDISPATCHER_SMALL=290202\nDISPATCHER_LARGE=62444696\nLOOP=98353552\nLOOP_SAFETY=98348870\nCONDITION_OPTIMISED=283256738\nCONDITION_UNOPTIMISED=63558657\nSAFE_READ_FAST=809309428\nSAFE_READ_SLOW_NOT_VALID=3424\nSAFE_WRITE_FAST=345787929\nSAFE_WRITE_SLOW_NOT_VALID=494\nSAFE_WRITE_SLOW_READ_ONLY=715\nSAFE_READ_WRITE_FAST=53929570\nSAFE_READ_WRITE_SLOW_NOT_VALID=15\nSAFE_READ_WRITE_SLOW_READ_ONLY=11\nPAGE_FAULT=606\nTLB_MISS=14650\nMAIN_LOOP=12101\nDO_MANY_CYCLES=27404\nCYCLE_INTERNAL=47212345\nINVALIDATE_MODULE_UNUSED_AFTER_OVERWRITE=2\nDIRTY_PAGE_DID_NOT_HAVE_CODE=51956\nRUN_FROM_CACHE_EXIT_SAME_PAGE=1473669\nRUN_FROM_CACHE_EXIT_NEAR_END_OF_PAGE=331231\nRUN_FROM_CACHE_EXIT_DIFFERENT_PAGE=43064671\nCLEAR_TLB=489\nMODRM_SIMPLE_REG=74019\nMODRM_SIMPLE_REG_WITH_OFFSET=730225330\nMODRM_SIMPLE_CONST_OFFSET=5023315\nMODRM_COMPLEX=195261578\nSEG_OFFSET_OPTIMISED=855130218\nSEG_OFFSET_NOT_OPTIMISED=2824583\nSEG_OFFSET_NOT_OPTIMISED_ES=495518\nSEG_OFFSET_NOT_OPTIMISED_GS=2329065\nJIT_METRICS {\"bytes\":10275795,\"modules\":72,\"compile_ms\":1230.9049499999944,\"pages\":186,\"bytes_per_page\":55246.209677419356}\ncpu round 0: restore 12 ms, started 46 ms, done 13116 ms, cpu 13040 ms, 2429.4M instr, 185.2M instr/s\nMEDIAN cpu: done 13116 ms, cpu 13040 ms, started 46 ms, 2429.4M instr, 185.2 Mips\n"
+  }
+}
