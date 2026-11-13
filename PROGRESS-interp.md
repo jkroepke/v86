@@ -23,3 +23,12 @@ Temporary file for a relaunched helper. Remove it before the final commits.
 
 ## Numbers
 - (old base, before rebase) nginx cpu median of 20: JIT off 1290 -> 990 ms, JIT on 1180 -> 1090 ms
+
+## Update 12:55
+- callgrind, nginx (boot + 1 round, 65.2M guest instr), Ir of generated code per guest instr:
+  v86-m2 165, r2 145.3, r3 142.7 (icg.sh prints a wrong "per guest" value: it counts only the boot;
+  divide Ir by 65.2M)
+- r4 = r3 without the inline immediates in gen/generate_interpreter.js: 2020366 bytes (r3 2054899).
+  callgrind running -> scratchpad icg-r4.txt. Decide: inline immediates worth 34 KB?
+- r5 = r3 + hotness commit (PAGE_HOTNESS flat array + KNOWN_ENTRY_POINTS cache in jit.rs):
+  2057738 bytes; callgrind running -> icg-r5.txt. Tests not run yet on any of it.
