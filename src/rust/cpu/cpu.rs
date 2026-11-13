@@ -2617,37 +2617,34 @@ unsafe fn read_imm8_slow() -> i64 {
     data8 as i64
 }
 
-unsafe fn read_imm8_packed() -> i64 {
+// The immediate values of an instruction. The functions with _inline are for the generated
+// interpreter: the common case (the bytes are in the code page of the last translation) is
+// inlined into the instruction, the page walk and the reads across a page boundary are calls.
+// The other functions are calls that return the result packed, for all other code.
+#[inline(always)]
+pub unsafe fn read_imm8_inline() -> OrPageFault<i32> {
     let eip = *instruction_pointer;
     if DISABLE_EIP_TRANSLATION_OPTIMISATION || 0 != eip & !0xFFF ^ *last_virt_eip {
-        return read_imm8_slow();
+        return unpack_result(read_imm8_slow());
     }
     dbg_assert!(!memory::in_mapped_range((*eip_phys ^ eip) as u32));
     let data8 = *memory::mem8.offset((*eip_phys ^ eip) as u32 as isize) as i32;
     *instruction_pointer = eip + 1;
-    data8 as i64
+    Ok(data8)
 }
-
+#[inline(never)]
+unsafe fn read_imm8_packed() -> i64 { pack_result(read_imm8_inline()) }
 #[inline(always)]
 pub unsafe fn read_imm8() -> OrPageFault<i32> { unpack_result(read_imm8_packed()) }
 
-// The modrm byte of the interpreter: the common case (the byte is in the code page of the last
-// translation) is inlined into every instruction, the page walk is not.
+// The modrm byte of the interpreter
 #[inline(always)]
-pub unsafe fn read_modrm_byte() -> OrPageFault<i32> {
-    let eip = *instruction_pointer;
-    if 0 != eip & !0xFFF ^ *last_virt_eip {
-        return unpack_result(read_imm8_slow());
-    }
-    let data8 = *memory::mem8.offset((*eip_phys ^ eip) as u32 as isize) as i32;
-    *instruction_pointer = eip + 1;
-    Ok(data8)
-}
+pub unsafe fn read_modrm_byte() -> OrPageFault<i32> { read_imm8_inline() }
 
-unsafe fn read_imm8s_packed() -> i64 {
-    let r = read_imm8_packed();
-    if r < 0 { r } else { ((r as i32) << 24 >> 24) as u32 as i64 }
-}
+#[inline(always)]
+pub unsafe fn read_imm8s_inline() -> OrPageFault<i32> { Ok(read_imm8_inline()? << 24 >> 24) }
+#[inline(never)]
+unsafe fn read_imm8s_packed() -> i64 { pack_result(read_imm8s_inline()) }
 #[inline(always)]
 pub unsafe fn read_imm8s() -> OrPageFault<i32> { unpack_result(read_imm8s_packed()) }
 
@@ -2665,19 +2662,22 @@ unsafe fn read_imm16_slow() -> i64 {
     low | high << 8
 }
 
-unsafe fn read_imm16_packed() -> i64 {
+#[inline(always)]
+pub unsafe fn read_imm16_inline() -> OrPageFault<i32> {
     // Two checks in one comparison:
     // 1. Did the high 20 bits of eip change
     // or 2. Are the low 12 bits of eip 0xFFF (and this read crosses a page boundary)
     let eip = *instruction_pointer;
     if DISABLE_EIP_TRANSLATION_OPTIMISATION || (eip ^ *last_virt_eip) as u32 > 0xFFE {
-        return read_imm16_slow();
+        return unpack_result(read_imm16_slow());
     }
     // code is never in a mapped range (see read_imm8)
     let data16 = memory::read16_no_mmap_check((*eip_phys ^ eip) as u32);
     *instruction_pointer = eip + 2;
-    data16 as i64
+    Ok(data16)
 }
+#[inline(never)]
+unsafe fn read_imm16_packed() -> i64 { pack_result(read_imm16_inline()) }
 #[inline(always)]
 pub unsafe fn read_imm16() -> OrPageFault<i32> { unpack_result(read_imm16_packed()) }
 
@@ -2695,16 +2695,19 @@ unsafe fn read_imm32s_slow() -> i64 {
     low | high << 16
 }
 
-unsafe fn read_imm32s_packed() -> i64 {
+#[inline(always)]
+pub unsafe fn read_imm32s_inline() -> OrPageFault<i32> {
     // Analogue to the above comment
     let eip = *instruction_pointer;
     if DISABLE_EIP_TRANSLATION_OPTIMISATION || (eip ^ *last_virt_eip) as u32 > 0xFFC {
-        return read_imm32s_slow();
+        return unpack_result(read_imm32s_slow());
     }
     let data32 = memory::read32_no_mmap_check((*eip_phys ^ eip) as u32);
     *instruction_pointer = eip + 4;
-    data32 as u32 as i64
+    Ok(data32)
 }
+#[inline(never)]
+unsafe fn read_imm32s_packed() -> i64 { pack_result(read_imm32s_inline()) }
 #[inline(always)]
 pub unsafe fn read_imm32s() -> OrPageFault<i32> { unpack_result(read_imm32s_packed()) }
 
@@ -3294,8 +3297,8 @@ pub unsafe fn run_instruction(opcode: i32) {
 }
 
 pub struct InterpreterLoop {
-    // where the current instruction starts
-    start_eip: i32,
+    // the page of the block
+    page: i32,
     // instructions that ran
     pub count: u32,
 }
@@ -3304,7 +3307,7 @@ pub struct InterpreterLoop {
 pub unsafe fn interpreter_loop_start() -> InterpreterLoop {
     // the caller has read the opcode
     InterpreterLoop {
-        start_eip: *instruction_pointer - 1,
+        page: *instruction_pointer - 1 & !0xFFF,
         count: 0,
     }
 }
@@ -3317,17 +3320,20 @@ pub unsafe fn interpreter_loop_next(state: &mut InterpreterLoop) -> Option<u32> 
     state.count += 1;
     let eip = *instruction_pointer;
 
-    if jit_block_boundary != 0
-        || (state.start_eip ^ eip) as u32 >= 0x1000
-        // Limit the number of iterations, as jumps within the same page are not counted as
-        // block boundaries for the interpreter, but only on the next backwards jump
-        || (state.count >= INTERPRETER_ITERATION_LIMIT && state.start_eip as u32 >= eip as u32)
-    {
+    // A block ends when the instruction says so and when it leaves the page
+    if jit_block_boundary != 0 || (state.page ^ eip) as u32 >= 0x1000 {
+        return None;
+    }
+    // Limit the number of iterations, as jumps within the same page are not counted as
+    // block boundaries for the interpreter, but only on the next backwards jump
+    // (previous_ip is still the start of the instruction that ran)
+    if state.count >= INTERPRETER_ITERATION_LIMIT && *previous_ip as u32 >= eip as u32 {
         return None;
     }
 
     *previous_ip = eip;
-    if 0 != eip & !0xFFF ^ *last_virt_eip {
+    if state.page != *last_virt_eip {
+        // an instruction that crossed the end of the page and jumped back
         if !interpreter_loop_translate(eip) {
             return None;
         }
@@ -3342,7 +3348,6 @@ pub unsafe fn interpreter_loop_next(state: &mut InterpreterLoop) -> Option<u32> 
         }
     }
 
-    state.start_eip = eip;
     *instruction_pointer = eip + 1;
     Some(*memory::mem8.offset(phys_addr as isize) as u32 | (*is_32 as u32) << 8)
 }
