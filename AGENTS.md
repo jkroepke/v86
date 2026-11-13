@@ -205,7 +205,8 @@ time goes.
   start (medians of 3 x 4-6 rounds on a busy machine): nginx 770 / 2830 /
   1050 ms -> 710 / 1090 / 820 ms, goapp 2060 / 8840 / 2950 ms -> 1950 / 3070
   / 2070 ms; cpu 5860 / 10420 ms -> 5980 / 9230 ms, glibc 5870 / 15200 ms ->
-  5730 / 11850 ms. spring (one round each): SPRING_NUMBERS. If modules get
+  5730 / 11850 ms. spring (one round each): 87.4 / 161.5 s -> 84.6 / 137.2 s. In headless
+  Chromium nginx answers after 0.79 s instead of 1.39 s. If modules get
   cheaper to compile, measure the threshold again.
 
 
