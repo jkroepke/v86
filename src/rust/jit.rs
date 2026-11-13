@@ -88,9 +88,10 @@ static mut MARK_SLOT_OF_PAGE: [u16; 0x100000] = [0; 0x100000];
 static mut MARK_SLOT_PAGE: [u32; MARK_SLOTS] = [0; MARK_SLOTS];
 static mut MARK_SLOT_NEXT: usize = 1;
 static mut MARK_SLOTS_FREE: Vec<u16> = Vec::new();
-// The marks of the block that the interpreter runs (set by jit_run_interpreted)
-pub static mut CUR_MARKS: *mut u8 = std::ptr::null_mut();
-pub static mut CUR_MARKS_VIRT_PAGE: i32 = 0;
+// The marks of the block that the interpreter runs (set by jit_run_interpreted): the offset
+// of its slot in MARKS (0 is the scratch slot) and the virtual page of the block
+static mut CUR_MARKS: usize = 0;
+static mut CUR_MARKS_VIRT_PAGE: i32 = 0;
 // set_jit_config(7, 0) turns the marks off (compile all blocks, like before)
 static mut JIT_COLD_BLOCKS: bool = true;
 
@@ -135,7 +136,7 @@ fn marks_free(page: Page) {
 #[inline(always)]
 pub unsafe fn marks_set_current(virt_eip: i32, phys_addr: u32) {
     let slot = MARK_SLOT_OF_PAGE[(phys_addr >> 12) as usize] as usize;
-    CUR_MARKS = std::ptr::addr_of_mut!(MARKS).cast::<u8>().add(slot * MARK_SLOT_BYTES);
+    CUR_MARKS = slot * MARK_SLOT_BYTES;
     CUR_MARKS_VIRT_PAGE = virt_eip & !0xFFF;
 }
 
@@ -143,7 +144,9 @@ pub unsafe fn marks_set_current(virt_eip: i32, phys_addr: u32) {
 #[inline(always)]
 pub unsafe fn mark_conditional_jump(eip: i32) {
     if ((eip ^ CUR_MARKS_VIRT_PAGE) as u32) < 0x1000 {
-        let m = CUR_MARKS.add((eip as usize & 0xFFF) >> 3);
+        let m = std::ptr::addr_of_mut!(MARKS)
+            .cast::<u8>()
+            .add(CUR_MARKS + ((eip as usize & 0xFFF) >> 3));
         *m |= 1 << (eip & 7);
     }
 }
@@ -790,7 +793,8 @@ fn jit_find_basic_blocks(
                         Some(current_address)
                     };
 
-                    let same_page_target = if (jump_target ^ current_virt_addr) as u32 & !0xFFF == 0 {
+                    let same_page_target = if (jump_target ^ current_virt_addr) as u32 & !0xFFF == 0
+                    {
                         Some(current_address & !0xFFF | jump_target as u32 & 0xFFF)
                     }
                     else {
