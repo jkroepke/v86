@@ -13,7 +13,7 @@ image from a 9p root file system (like `web/src/vmworker.js` in tabernetes).
 
 | name   | image                 | ends when                    | what it stresses                               |
 |--------|-----------------------|------------------------------|------------------------------------------------|
-| nginx  | `nginx` (Debian)      | HTTP answer on port 80       | program start, ~53M instructions, 75 % interpreted |
+| nginx  | `nginx` (Debian)      | HTTP answer on port 80       | program start, ~51M instructions, 82 % interpreted |
 | cpu    | `alpine`              | exit; sha256 sums must match | JIT code: shell loop, gzip, sha256 (~2.4G instr) |
 | glibc  | `nginx` (Debian)      | exit                         | grep/sort/sed/awk on text, glibc SSE2 string functions |
 | spring | see below             | HTTP answer on port 80       | a JVM (C1 JIT code in the guest), ~100 s, jumps between pages |
