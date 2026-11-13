@@ -191,7 +191,7 @@ pub fn stat_increment_by(stat: stat, by: u64) {
 
 // Per wasm table index: entries from the main loop and size of the module (0: free)
 // (only allocated in profiler builds)
-const MODULES: usize = if cfg!(feature = "profiler") { 1024 } else { 1 };
+const MODULES: usize = if cfg!(feature = "profiler") { crate::jit::WASM_TABLE_SIZE as usize } else { 1 };
 const PAGES: usize = if cfg!(feature = "profiler") { 0x100000 } else { 1 };
 static mut MODULE_ENTRIES: [u64; MODULES] = [0; MODULES];
 static mut MODULE_BYTES: [u32; MODULES] = [0; MODULES];

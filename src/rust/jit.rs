@@ -103,7 +103,10 @@ pub static mut JIT_THRESHOLD: u32 = 200 * 1000;
 pub const BRTABLE_CUTOFF: usize = 10;
 
 // needs to be synced to const.js
-pub const WASM_TABLE_SIZE: u32 = 900;
+// Modules of one page are about a third of the size of the modules of three pages that v86 made
+// before (with 900 slots), so 3000 slots bound the memory about the same. Spring (a JVM) makes
+// ~2300 modules; with 900 slots it filled the table and recompiled everything.
+pub const WASM_TABLE_SIZE: u32 = 3000;
 
 pub const CHECK_JIT_STATE_INVARIANTS: bool = false;
 
