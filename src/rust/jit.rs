@@ -1067,6 +1067,14 @@ fn jit_analyze_and_generate(
         ctx.wasm_builder.get_output_len() as u64,
     );
     profiler::stat_increment_by(stat::COMPILE_PAGE, pages.len() as u64);
+    if cfg!(feature = "profiler") {
+        let ps: Vec<u32> = pages.iter().map(|p| p.to_u32()).collect();
+        profiler::module_compiled(
+            wasm_table_index.to_u16(),
+            ctx.wasm_builder.get_output_len(),
+            &ps,
+        );
+    }
 
     cpu::tlb_set_has_code_multiple(&pages, true);
 
@@ -2274,6 +2282,7 @@ fn free_wasm_table_index(ctx: &mut JitState, wasm_table_index: WasmTableIndex) {
     ctx.wasm_table_index_to_page.remove(&wasm_table_index);
 
     ctx.wasm_table_index_free_list.push(wasm_table_index);
+    profiler::module_freed(wasm_table_index.to_u16());
 
     // It is not strictly necessary to clear the function, but it will fail more predictably if we
     // accidentally use the function and may garbage collect unused modules earlier
@@ -2292,6 +2301,7 @@ fn jit_dirty_page_ctx(ctx: &mut JitState, page: Page) {
     }) = ctx.pages.remove(&page)
     {
         profiler::stat_increment(stat::INVALIDATE_PAGE_HAD_CODE);
+        profiler::page_invalidated(page.to_u32());
         did_have_code = true;
 
         free(ctx, wasm_table_index);
