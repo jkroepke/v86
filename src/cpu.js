@@ -75,6 +75,9 @@ export function CPU(bus, wm, stop_idling)
 
     this.memory_size = view(Uint32Array, memory, 812, 1);
 
+    /** @type {boolean} */
+    this.memory_fresh = false;
+
     this.mem8 = new Uint8Array(0);
     this.mem32s = new Int32Array(this.mem8.buffer);
 
@@ -298,6 +301,11 @@ CPU.prototype.mmap_write128 = function(addr, value0, value1, value2, value3)
  */
 CPU.prototype.write_blob = function(blob, offset)
 {
+    if(offset + blob.length > FRESH_MEMORY_DIRTY_LIMIT)
+    {
+        this.memory_fresh = false;
+    }
+
     dbg_assert(blob && blob.length >= 0);
 
     if(blob.length)
@@ -919,9 +927,19 @@ CPU.prototype.pack_memory = function()
 
 CPU.prototype.unpack_memory = function(bitmap, packed_memory)
 {
-    this.zero_memory(0, this.memory_size[0]);
+    // A VM that has not run yet has zeroed memory above the first MiB (the
+    // BIOS and option ROMs live below). Zeroing all of it would take time
+    // and make the browser commit every page of the guest memory.
+    const fresh = this.memory_fresh;
+    this.memory_fresh = false;
+
+    if(!fresh)
+    {
+        this.zero_memory(0, this.memory_size[0]);
+    }
 
     const page_count = this.memory_size[0] >> 12;
+    const low_pages = FRESH_MEMORY_DIRTY_LIMIT >> 12;
     let packed_page = 0;
 
     for(let page = 0; page < page_count; page++)
@@ -932,6 +950,10 @@ CPU.prototype.unpack_memory = function(bitmap, packed_memory)
             const view = packed_memory.subarray(offset, offset + 0x1000);
             this.mem8.set(view, page << 12);
             packed_page++;
+        }
+        else if(fresh && page < low_pages && !this.is_memory_zeroed(page << 12, 0x1000))
+        {
+            this.zero_memory(page << 12, 0x1000);
         }
     }
 };
@@ -967,6 +989,10 @@ CPU.prototype.reset_memory = function()
     this.mem8.fill(0);
 };
 
+// Memory below this address may hold the BIOS and option ROMs before the
+// CPU has run (see memory_fresh)
+const FRESH_MEMORY_DIRTY_LIMIT = 1024 * 1024;
+
 CPU.prototype.create_memory = function(size, minimum_size)
 {
     if(size < minimum_size)
@@ -992,6 +1018,12 @@ CPU.prototype.create_memory = function(size, minimum_size)
 
     this.mem8 = view(Uint8Array, this.wasm_memory, memory_offset, size);
     this.mem32s = view(Uint32Array, this.wasm_memory, memory_offset, size >> 2);
+
+    // Set to false once anything above FRESH_MEMORY_DIRTY_LIMIT may have been
+    // written: when the CPU runs (main.js), or by write_blob and load_kernel.
+    // Code that writes to mem8 directly and restores a state without running
+    // the CPU must clear it too.
+    this.memory_fresh = true;
 };
 
 /**
@@ -1026,6 +1058,7 @@ CPU.prototype.init = function(settings, device_bus)
     if(settings.bzimage)
     {
         const option_rom = load_kernel(this.mem8, settings.bzimage, settings.initrd, settings.cmdline || "");
+        this.memory_fresh = false;
 
         if(option_rom)
         {
