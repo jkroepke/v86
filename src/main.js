@@ -124,6 +124,49 @@ else if(globalThis["scheduler"] && typeof globalThis["scheduler"]["postTask"] ==
     v86.prototype.register_yield = function() {};
     v86.prototype.unregister_yield = function() {};
 }
+else if(typeof WorkerGlobalScope !== "undefined" && globalThis instanceof WorkerGlobalScope && typeof MessageChannel !== "undefined")
+{
+    // Inside a worker: the timers of a worker are not throttled like the ones
+    // of a background tab, so no helper worker is needed. A MessageChannel
+    // continues in the same thread without the 4 ms clamp of nested
+    // setTimeout calls. The helper worker costs a round trip to another
+    // thread every millisecond of emulation (about 20 % of the throughput).
+    v86.prototype.register_yield = function()
+    {
+        this.yield_channel = new MessageChannel();
+        this.yield_channel.port1.onmessage = e => this.yield_callback(e.data);
+        this.yield_timeout = 0;
+    };
+
+    v86.prototype.yield = function(t, tick)
+    {
+        if(this.yield_timeout)
+        {
+            clearTimeout(this.yield_timeout);
+            this.yield_timeout = 0;
+        }
+        if(t < 1)
+        {
+            this.yield_channel.port2.postMessage(tick);
+        }
+        else
+        {
+            this.yield_timeout = setTimeout(() => { this.yield_timeout = 0; this.yield_callback(tick); }, t);
+        }
+    };
+
+    v86.prototype.unregister_yield = function()
+    {
+        if(this.yield_timeout) clearTimeout(this.yield_timeout);
+        this.yield_timeout = 0;
+        if(this.yield_channel)
+        {
+            this.yield_channel.port1.close();
+            this.yield_channel.port2.close();
+            this.yield_channel = null;
+        }
+    };
+}
 else if(typeof Worker !== "undefined")
 {
     // XXX: This has a slightly lower throughput compared to window.postMessage
