@@ -247,6 +247,34 @@ pub fn gen(ctx: &mut JitContext, modrm_byte: ModrmByte, esp_offset: i32) {
         ctx.builder.and_i32();
     }
     jit_add_seg_offset(ctx, modrm_byte.segment);
+
+    if !modrm_byte.is_16 && seg_offset_is_zero(ctx, modrm_byte.segment) {
+        let disp = if modrm_byte.first_reg == Some(ESP) {
+            modrm_byte.immediate.wrapping_add(esp_offset)
+        }
+        else {
+            modrm_byte.immediate
+        };
+        codegen::gen_set_pending_addr(
+            ctx,
+            codegen::AddrKey {
+                first_reg: modrm_byte.first_reg,
+                second_reg: modrm_byte.second_reg,
+                shift: modrm_byte.shift,
+            },
+            disp,
+        );
+    }
+}
+
+/// Whether jit_add_seg_offset adds nothing (flat segment or no segment)
+fn seg_offset_is_zero(ctx: &mut JitContext, default_segment: u32) -> bool {
+    let prefix = ctx.cpu.prefixes & PREFIX_MASK_SEGMENT;
+    if prefix == SEG_PREFIX_ZERO {
+        return true;
+    }
+    let seg = if prefix != 0 { (prefix - 1) as u32 } else { default_segment };
+    can_optimize_get_seg(ctx, seg)
 }
 
 pub fn get_as_reg_index_if_possible(ctx: &mut JitContext, modrm_byte: &ModrmByte) -> Option<u32> {

@@ -475,6 +475,9 @@ pub struct JitContext<'a> {
     pub gs_is_null: Option<WasmLocal>,
     pub instruction_counter: WasmLocal,
     pub wasm_table_index: WasmTableIndex,
+    /// See codegen::MemGroup
+    pub mem_groups: Vec<codegen::MemGroup>,
+    pub pending_addr: Option<codegen::PendingAddr>,
 }
 impl<'a> JitContext<'a> {
     pub fn reg(&self, i: u32) -> WasmLocal {
@@ -1423,12 +1426,13 @@ fn jit_generate_module(
 ) -> Vec<(u32, u16)> {
     builder.reset();
 
-    let mut register_locals = (0..8)
+    let mut register_locals: Vec<WasmLocal> = (0..8)
         .map(|i| {
             builder.load_fixed_i32(global_pointers::get_reg32_offset(i));
             builder.set_new_local()
         })
         .collect();
+    builder.set_register_locals(&register_locals[0], &register_locals[7]);
 
     builder.const_i32(0);
     let instruction_counter = builder.set_new_local();
@@ -1470,6 +1474,8 @@ fn jit_generate_module(
         gs_is_null: None,
         instruction_counter,
         wasm_table_index,
+        mem_groups: Vec::new(),
+        pending_addr: None,
     };
 
     let entry_blocks = {
@@ -2290,9 +2296,14 @@ fn jit_generate_module(
     {
         // bail: a memory access missed the fast path, the interpreter runs the instruction
         ctx.builder.block_end();
+        // bit 12 of the low bits: missed access of a group
         ctx.builder
             .const_i32(&raw mut cpu::jit_bailed as i32);
+        ctx.builder.get_local(&ctx.bail_eip_low_bits_local);
+        ctx.builder.const_i32(12);
+        ctx.builder.shr_u_i32();
         ctx.builder.const_i32(1);
+        ctx.builder.add_i32();
         ctx.builder.store_u8(0);
         ctx.builder
             .const_i32(global_pointers::instruction_pointer as i32);
@@ -2300,6 +2311,8 @@ fn jit_generate_module(
         ctx.builder.const_i32(!0xFFF);
         ctx.builder.and_i32();
         ctx.builder.get_local(&ctx.bail_eip_low_bits_local);
+        ctx.builder.const_i32(0xFFF);
+        ctx.builder.and_i32();
         ctx.builder.or_i32();
         ctx.builder.store_aligned_i32(0);
         // falls through to exit
@@ -2439,6 +2452,8 @@ fn jit_generate_basic_block(ctx: &mut JitContext, block: &BasicBlock) {
 
         ctx.previous_instruction = mem::replace(&mut ctx.current_instruction, Instruction::Other);
     }
+
+    codegen::gen_mem_groups_clear(ctx);
 
     // Segment reloads end a basic block. Reload GS on every subsequent block,
     // including blocks reached by a different entry into the same module.
@@ -2681,6 +2696,32 @@ pub fn jit_dirty_cache(start_addr: u32, end_addr: u32) {
 }
 
 #[no_mangle]
+/// Instructions (physical address) whose access missed the page of its group, and how often.
+/// At MEM_GROUP_MISS_LIMIT the page is compiled again, and the instruction checks the TLB
+/// itself (codegen::MemGroup): a structure across a page boundary would bail every time.
+static mut MEM_GROUP_MISSES: Option<HashMap<u32, u32>> = None;
+const MEM_GROUP_MISS_LIMIT: u32 = 8;
+
+pub fn mem_group_missed(phys_addr: u32) {
+    #[allow(static_mut_refs)]
+    let m = unsafe { MEM_GROUP_MISSES.get_or_insert_with(HashMap::default) };
+    let n = m.entry(phys_addr).or_insert(0);
+    *n += 1;
+    if *n == MEM_GROUP_MISS_LIMIT {
+        profiler::stat_increment(stat::MEM_GROUP_RECOMPILE);
+        jit_dirty_page(Page::page_of(phys_addr));
+    }
+}
+
+/// Whether the instruction at this physical address must check the TLB itself
+pub fn mem_group_disabled(phys_addr: u32) -> bool {
+    #[allow(static_mut_refs)]
+    match unsafe { MEM_GROUP_MISSES.as_ref() } {
+        Some(m) => m.get(&phys_addr).map_or(false, |&n| n >= MEM_GROUP_MISS_LIMIT),
+        None => false,
+    }
+}
+
 pub fn jit_dirty_page(page: Page) { jit_dirty_page_ctx(&mut get_jit_state(), page) }
 
 /// dirty pages in the range of start_addr and end_addr, which must span at most two pages
@@ -2883,6 +2924,8 @@ pub unsafe fn set_jit_config(index: u32, value: u32) {
         5 => codegen::JIT_SIMD = value != 0,
         7 => JIT_COLD_BLOCKS = value != 0,
         8 => codegen::JIT_BAIL = value != 0,
+        9 => codegen::JIT_MEM_GROUPS = value != 0,
+        10 => codegen::JIT_MEM_GROUP_MISS_FULL = value != 0,
         _ => dbg_assert!(false),
     }
 }
@@ -2898,6 +2941,7 @@ pub unsafe fn get_jit_config(index: u32) -> u32 {
         5 => codegen::JIT_SIMD as u32,
         7 => JIT_COLD_BLOCKS as u32,
         8 => codegen::JIT_BAIL as u32,
+        9 => codegen::JIT_MEM_GROUPS as u32,
         _ => 0,
     }
 }

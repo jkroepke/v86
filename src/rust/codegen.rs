@@ -4,6 +4,7 @@ use crate::cpu::cpu::{
 };
 use crate::cpu::global_pointers;
 use crate::cpu::memory;
+use crate::jit;
 use crate::jit::{Instruction, InstructionOperand, InstructionOperandDest, JitContext};
 use crate::modrm;
 use crate::modrm::ModrmByte;
@@ -666,11 +667,305 @@ pub fn gen_safe_write128(
 /// generated code means V8 need not spill the live locals around it.
 pub static mut JIT_BAIL: bool = true;
 
+/// When on, memory accesses in a basic block share the TLB check of an earlier access with the
+/// same address registers (see MemGroup).
+pub static mut JIT_MEM_GROUPS: bool = true;
+
+/// The registers of an address: [first_reg + second_reg << shift + disp]
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct AddrKey {
+    pub first_reg: Option<u32>,
+    pub second_reg: Option<u32>,
+    pub shift: u8,
+}
+
+/// The address that modrm::gen (or a push/pop) just computed, as registers and displacement.
+/// Only valid for the memory access that uses the local set right after it, while
+/// builder.epoch is unchanged (no register written in between).
+pub struct PendingAddr {
+    pub key: AddrKey,
+    pub disp: i32,
+    pub body_pos: usize,
+    pub epoch: u32,
+    pub stamp: u32,
+    /// the address is this register local itself (no code at body_pos)
+    pub reg_local: Option<u8>,
+}
+
+/// An access that passed the TLB check: `phys_local` holds its address in wasm memory. While no
+/// register, block or call was emitted since (`epoch`), a later access with the same registers
+/// and another displacement is in the same page when (phys & 0xFFF) + delta stays within the
+/// page; then its address is phys + delta and the TLB check is skipped. A write needs a group
+/// that was checked for writing.
+pub struct MemGroup {
+    key: AddrKey,
+    disp: i32,
+    write: bool,
+    phys_local: WasmLocal,
+    epoch: u32,
+    /// builder.reg_write_count when the registers of key had the values of the access
+    stamp: u32,
+}
+
+/// No block, loop, if or call since `epoch`, and no register of `key` written after `stamp`
+fn key_still_valid(builder: &WasmBuilder, key: &AddrKey, epoch: u32, stamp: u32) -> bool {
+    builder.epoch == epoch
+        && key.first_reg.map_or(true, |r| builder.reg_last_write[r as usize] <= stamp)
+        && key.second_reg.map_or(true, |r| builder.reg_last_write[r as usize] <= stamp)
+}
+
+pub fn gen_set_pending_addr(ctx: &mut JitContext, key: AddrKey, disp: i32) {
+    if !unsafe { JIT_MEM_GROUPS && JIT_BAIL } {
+        return;
+    }
+    ctx.pending_addr = Some(PendingAddr {
+        key,
+        disp,
+        body_pos: ctx.builder.body_len(),
+        epoch: ctx.builder.epoch,
+        stamp: ctx.builder.reg_write_count,
+        reg_local: None,
+    });
+}
+
+fn take_addr_expr(ctx: &mut JitContext, address_local: &WasmLocal) -> Option<(AddrKey, i32)> {
+    let p = ctx.pending_addr.take()?;
+    if !key_still_valid(ctx.builder, &p.key, p.epoch, p.stamp) {
+        return None;
+    }
+    let ok = match p.reg_local {
+        Some(idx) => idx == address_local.idx() && ctx.builder.body_len() == p.body_pos,
+        None => ctx.builder.is_set_local_since(p.body_pos, address_local),
+    };
+    if ok {
+        Some((p.key, p.disp))
+    }
+    else {
+        None
+    }
+}
+
+pub fn gen_mem_groups_clear(ctx: &mut JitContext) {
+    for g in ctx.mem_groups.drain(..) {
+        ctx.builder.free_local(g.phys_local);
+    }
+    ctx.pending_addr = None;
+}
+
+fn mem_groups_purge(ctx: &mut JitContext) {
+    let mut i = 0;
+    while i < ctx.mem_groups.len() {
+        let g = &ctx.mem_groups[i];
+        if !key_still_valid(ctx.builder, &g.key, g.epoch, g.stamp) {
+            let g = ctx.mem_groups.swap_remove(i);
+            ctx.builder.free_local(g.phys_local);
+        }
+        else {
+            i += 1;
+        }
+    }
+}
+
+/// The state before a register write that mem_groups_reg_adjusted needs
+pub fn reg_write_state(ctx: &JitContext, reg: u32) -> (u32, u32) {
+    (ctx.builder.reg_write_count, ctx.builder.reg_last_write[reg as usize])
+}
+
+/// Called after register `reg` was set to its old value plus `delta`, with only that one
+/// register write since `before` (from reg_write_state): keep its groups valid
+pub fn mem_groups_reg_adjusted(ctx: &mut JitContext, reg: u32, delta: i32, before: (u32, u32)) {
+    let b = &ctx.builder;
+    if b.reg_write_count != before.0 + 1 || b.reg_last_write[reg as usize] != b.reg_write_count {
+        return;
+    }
+    let now = b.reg_write_count;
+    for g in ctx.mem_groups.iter_mut() {
+        if g.key.first_reg == Some(reg)
+            && g.key.second_reg.is_none()
+            && g.epoch == b.epoch
+            && g.stamp >= before.1
+        {
+            g.disp = g.disp.wrapping_sub(delta);
+            g.stamp = now;
+        }
+    }
+}
+
+/// If a group covers this access, emit its check and leave the address in wasm memory on the
+/// stack
+fn gen_mem_group_access(
+    ctx: &mut JitContext,
+    expr: Option<(AddrKey, i32)>,
+    bits: BitSize,
+    write: bool,
+    report: &str,
+    address_local: &WasmLocal,
+) -> bool {
+    let (key, disp) = match expr {
+        Some(e) => e,
+        None => return false,
+    };
+    if jit::mem_group_disabled(ctx.start_of_current_instruction) {
+        return false;
+    }
+    mem_groups_purge(ctx);
+    let g = match ctx
+        .mem_groups
+        .iter()
+        .find(|g| g.key == key && (g.write || !write))
+    {
+        Some(g) => g,
+        None => return false,
+    };
+    let delta = disp.wrapping_sub(g.disp);
+    if delta <= -0x1000 || delta >= 0x1000 {
+        return false;
+    }
+    let phys_local = g.phys_local.unsafe_clone();
+    let epoch = ctx.builder.epoch;
+
+    gen_profiler_stat_increment(ctx.builder, profiler::stat::MEM_GROUP_HIT);
+
+    if unsafe { JIT_MEM_GROUP_MISS_FULL } {
+        ctx.builder.get_local(&phys_local);
+        ctx.builder.const_i32(0xFFF);
+        ctx.builder.and_i32();
+        if delta != 0 {
+            ctx.builder.const_i32(delta);
+            ctx.builder.add_i32();
+        }
+        ctx.builder.const_i32(0x1000 - bits.bytes() as i32);
+        ctx.builder.leu_i32();
+        ctx.builder.if_i32();
+        ctx.builder.get_local(&phys_local);
+        if delta != 0 {
+            ctx.builder.const_i32(delta);
+            ctx.builder.add_i32();
+        }
+        ctx.builder.else_();
+        gen_profiler_stat_increment(ctx.builder, profiler::stat::MEM_GROUP_MISS);
+        gen_full_tlb_check(ctx, bits, address_local, write, report);
+        ctx.builder.block_end();
+        ctx.builder.epoch = epoch;
+        return true;
+    }
+
+    // (phys & 0xFFF) + delta <= 0x1000 - bytes, unsigned: the access is in the same page
+    let cont = ctx.builder.block_void();
+    ctx.builder.get_local(&phys_local);
+    ctx.builder.const_i32(0xFFF);
+    ctx.builder.and_i32();
+    if delta != 0 {
+        ctx.builder.const_i32(delta);
+        ctx.builder.add_i32();
+    }
+    ctx.builder.const_i32(0x1000 - bits.bytes() as i32);
+    ctx.builder.leu_i32();
+    ctx.builder.br_if(cont);
+    gen_profiler_stat_increment(ctx.builder, profiler::stat::MEM_GROUP_MISS);
+    gen_bail_to_interpreter_flags(ctx, report, address_local, &phys_local, 0x1000);
+    ctx.builder.block_end();
+    // the check writes no register
+    ctx.builder.epoch = epoch;
+
+    ctx.builder.get_local(&phys_local);
+    if delta != 0 {
+        ctx.builder.const_i32(delta);
+        ctx.builder.add_i32();
+    }
+    true
+}
+
+pub static mut JIT_MEM_GROUP_MISS_FULL: bool = false;
+
+/// The TLB check with a bail (JIT_BAIL); leaves the address in wasm memory on the stack
+fn gen_full_tlb_check(
+    ctx: &mut JitContext,
+    bits: BitSize,
+    address_local: &WasmLocal,
+    write: bool,
+    report: &str,
+) {
+    let cont = ctx.builder.block_void();
+    ctx.builder.get_local(&address_local);
+    ctx.builder.const_i32(12);
+    ctx.builder.shr_u_i32();
+    ctx.builder.const_i32(2);
+    ctx.builder.shl_i32();
+    ctx.builder
+        .load_aligned_i32(unsafe { &tlb_data[0] as *const i32 as u32 });
+    let entry_local = ctx.builder.tee_new_local();
+    let user = if ctx.cpu.cpl3() { 0 } else { TLB_NO_USER };
+    ctx.builder.const_i32(if write {
+        0xFFF & !TLB_GLOBAL & !TLB_NO_EXEC & !user
+    }
+    else {
+        0xFFF & !TLB_READONLY & !TLB_GLOBAL & !TLB_HAS_CODE & !TLB_NO_EXEC & !user
+    });
+    ctx.builder.and_i32();
+    gen_or_page_cross_bit(ctx, address_local, bits);
+    ctx.builder.const_i32(TLB_VALID as i32);
+    ctx.builder.eq_i32();
+    ctx.builder.br_if(cont);
+    gen_bail_to_interpreter(ctx, report, address_local, &entry_local);
+    ctx.builder.block_end();
+    ctx.builder.get_local(&entry_local);
+    ctx.builder.const_i32(!0xFFF);
+    ctx.builder.and_i32();
+    ctx.builder.get_local(&address_local);
+    ctx.builder.xor_i32();
+    ctx.builder.free_local(entry_local);
+}
+
+/// After a full TLB check: the address in wasm memory is on the stack; keep it as a group
+fn gen_mem_group_create(
+    ctx: &mut JitContext,
+    expr: Option<(AddrKey, i32)>,
+    write: bool,
+    epoch: u32,
+) {
+    let (key, disp) = match expr {
+        Some(e) => e,
+        None => return,
+    };
+    ctx.builder.epoch = epoch;
+    mem_groups_purge(ctx);
+    if let Some(i) = ctx.mem_groups.iter().position(|g| g.key == key) {
+        let g = ctx.mem_groups.swap_remove(i);
+        ctx.builder.free_local(g.phys_local);
+    }
+    if ctx.mem_groups.len() >= 4 {
+        let g = ctx.mem_groups.remove(0);
+        ctx.builder.free_local(g.phys_local);
+    }
+    let phys_local = ctx.builder.tee_new_local();
+    let stamp = ctx.builder.reg_write_count;
+    ctx.mem_groups.push(MemGroup {
+        key,
+        disp,
+        write,
+        phys_local,
+        epoch,
+        stamp,
+    });
+}
+
 fn gen_bail_to_interpreter(
     ctx: &mut JitContext,
     report: &str,
     address_local: &WasmLocal,
     entry_local: &WasmLocal,
+) {
+    gen_bail_to_interpreter_flags(ctx, report, address_local, entry_local, 0)
+}
+
+/// flags: 0x1000 for a missed access of a group (see cpu::jit_bailed)
+fn gen_bail_to_interpreter_flags(
+    ctx: &mut JitContext,
+    report: &str,
+    address_local: &WasmLocal,
+    entry_local: &WasmLocal,
+    flags: i32,
 ) {
     if cfg!(feature = "profiler") {
         ctx.builder.get_local(address_local);
@@ -679,7 +974,7 @@ fn gen_bail_to_interpreter(
         gen_debug_track_jit_exit(ctx.builder, ctx.start_of_current_instruction);
     }
     ctx.builder
-        .const_i32(ctx.start_of_current_instruction as i32 & 0xFFF);
+        .const_i32(ctx.start_of_current_instruction as i32 & 0xFFF | flags);
     ctx.builder.set_local(&ctx.bail_eip_low_bits_local);
     ctx.builder.br(ctx.bail_label);
 }
@@ -716,6 +1011,20 @@ fn gen_safe_read(
     //   entry <- safe_read_jit_slow(addr, instruction_pointer)
     //   if page_fault: goto exit-with-pagefault
     //   fast: mem[(entry & ~0xFFF) ^ addr]
+
+    let expr = take_addr_expr(ctx, address_local);
+    if gen_mem_group_access(
+        ctx,
+        expr,
+        bits,
+        false,
+        "report_safe_read_jit_slow",
+        address_local,
+    ) {
+        gen_read_from_phys(ctx, bits, where_to_write);
+        return;
+    }
+    let epoch = ctx.builder.epoch;
 
     let cont = ctx.builder.block_void();
     ctx.builder.get_local(&address_local);
@@ -801,6 +1110,14 @@ fn gen_safe_read(
     ctx.builder.get_local(&address_local);
     ctx.builder.xor_i32();
 
+    if unsafe { JIT_BAIL } {
+        gen_mem_group_create(ctx, expr, false, epoch);
+    }
+    ctx.builder.free_local(entry_local);
+    gen_read_from_phys(ctx, bits, where_to_write);
+}
+
+fn gen_read_from_phys(ctx: &mut JitContext, bits: BitSize, where_to_write: Option<u32>) {
     // where_to_write is only used by dqword
     dbg_assert!((where_to_write != None) == (bits == BitSize::DQWORD));
 
@@ -841,8 +1158,6 @@ fn gen_safe_read(
             ctx.builder.free_local(virt_address_local);
         },
     }
-
-    ctx.builder.free_local(entry_local);
 }
 
 pub fn gen_get_phys_eip_plus_mem(ctx: &mut JitContext, address_local: &WasmLocal) {
@@ -936,6 +1251,20 @@ fn gen_safe_write(
     //   entry <- safe_write_jit_slow(addr, value, instruction_pointer)
     //   if page_fault: goto exit-with-pagefault
     //   fast: mem[(entry & ~0xFFF) ^ addr] <- value
+
+    let expr = take_addr_expr(ctx, address_local);
+    if gen_mem_group_access(
+        ctx,
+        expr,
+        bits,
+        true,
+        "report_safe_write_jit_slow",
+        address_local,
+    ) {
+        gen_write_to_phys(ctx, bits, value_local);
+        return;
+    }
+    let epoch = ctx.builder.epoch;
 
     let cont = ctx.builder.block_void();
     ctx.builder.get_local(&address_local);
@@ -1032,6 +1361,14 @@ fn gen_safe_write(
     ctx.builder.get_local(&address_local);
     ctx.builder.xor_i32();
 
+    if unsafe { JIT_BAIL } {
+        gen_mem_group_create(ctx, expr, true, epoch);
+    }
+    ctx.builder.free_local(entry_local);
+    gen_write_to_phys(ctx, bits, value_local);
+}
+
+fn gen_write_to_phys(ctx: &mut JitContext, bits: BitSize, value_local: GenSafeWriteValue) {
     match value_local {
         GenSafeWriteValue::I32(local) => ctx.builder.get_local(local),
         GenSafeWriteValue::I64(local) => ctx.builder.get_local_i64(local),
@@ -1063,8 +1400,6 @@ fn gen_safe_write(
         },
         BitSize::DQWORD => {}, // handled above
     }
-
-    ctx.builder.free_local(entry_local);
 }
 
 pub fn gen_safe_read_write(
@@ -1086,99 +1421,114 @@ pub fn gen_safe_read_write(
     //   if !can_use_fast_path { safe_write_jit_slow(addr, value, instruction_pointer) }
     //   mem[(entry & ~0xFFF) ^ addr] <- value
 
-    let cont = ctx.builder.block_void();
-    ctx.builder.get_local(address_local);
-
-    ctx.builder.const_i32(12);
-    ctx.builder.shr_u_i32();
-    ctx.builder.const_i32(2);
-    ctx.builder.shl_i32();
-
-    ctx.builder
-        .load_aligned_i32(unsafe { &tlb_data[0] as *const i32 as u32 });
-    let entry_local = ctx.builder.tee_new_local();
-
-    ctx.builder.const_i32(
-        (0xFFF & !TLB_GLOBAL & !TLB_NO_EXEC & !(if ctx.cpu.cpl3() { 0 } else { TLB_NO_USER }))
-            as i32,
+    let expr = take_addr_expr(ctx, address_local);
+    let grouped = gen_mem_group_access(
+        ctx,
+        expr,
+        bits,
+        true,
+        "report_safe_read_write_jit_slow",
+        address_local,
     );
-    ctx.builder.and_i32();
-    gen_or_page_cross_bit(ctx, address_local, bits);
-    ctx.builder.const_i32(TLB_VALID as i32);
-    ctx.builder.eq_i32();
+    let epoch = ctx.builder.epoch;
+    let mut can_use_fast_path_local = None;
+    if !grouped {
+        let cont = ctx.builder.block_void();
+        ctx.builder.get_local(address_local);
 
-    let can_use_fast_path_local = if unsafe { JIT_BAIL } {
-        None
-    }
-    else {
-        Some(ctx.builder.tee_new_local())
-    };
+        ctx.builder.const_i32(12);
+        ctx.builder.shr_u_i32();
+        ctx.builder.const_i32(2);
+        ctx.builder.shl_i32();
 
-    ctx.builder.br_if(cont);
+        ctx.builder
+            .load_aligned_i32(unsafe { &tlb_data[0] as *const i32 as u32 });
+        let entry_local = ctx.builder.tee_new_local();
 
-    if unsafe { JIT_BAIL } {
-        gen_bail_to_interpreter(ctx, "report_safe_read_write_jit_slow", address_local, &entry_local);
-    }
-    else {
-        if cfg!(feature = "profiler") {
-            ctx.builder.get_local(&address_local);
-            ctx.builder.get_local(&entry_local);
-            ctx.builder.call_fn2("report_safe_read_write_jit_slow");
-        }
-
-        ctx.builder.get_local(&address_local);
-
-        // packed lower bits of eip and wasm table index
         ctx.builder.const_i32(
-            ctx.start_of_current_instruction as i32 & 0xFFF
-                | (ctx.wasm_table_index.to_u16() as i32) << 16,
+            (0xFFF & !TLB_GLOBAL & !TLB_NO_EXEC & !(if ctx.cpu.cpl3() { 0 } else { TLB_NO_USER }))
+                as i32,
         );
-
-        match bits {
-            BitSize::BYTE => {
-                ctx.builder.call_fn2_ret("safe_read_write8_slow_jit");
-            },
-            BitSize::WORD => {
-                ctx.builder.call_fn2_ret("safe_read_write16_slow_jit");
-            },
-            BitSize::DWORD => {
-                ctx.builder.call_fn2_ret("safe_read_write32s_slow_jit");
-            },
-            BitSize::QWORD => {
-                ctx.builder.call_fn2_ret("safe_read_write64_slow_jit");
-            },
-            BitSize::DQWORD => {
-                dbg_assert!(false);
-            },
-        }
-        ctx.builder.tee_local(&entry_local);
-        ctx.builder.const_i32(1);
         ctx.builder.and_i32();
+        gen_or_page_cross_bit(ctx, address_local, bits);
+        ctx.builder.const_i32(TLB_VALID as i32);
+        ctx.builder.eq_i32();
 
-        if cfg!(feature = "profiler") {
-            ctx.builder.if_void();
-            gen_debug_track_jit_exit(ctx.builder, ctx.start_of_current_instruction);
-            ctx.builder.block_end();
+        can_use_fast_path_local = if unsafe { JIT_BAIL } {
+            None
+        }
+        else {
+            Some(ctx.builder.tee_new_local())
+        };
 
-            ctx.builder.get_local(&entry_local);
+        ctx.builder.br_if(cont);
+
+        if unsafe { JIT_BAIL } {
+            gen_bail_to_interpreter(ctx, "report_safe_read_write_jit_slow", address_local, &entry_local);
+        }
+        else {
+            if cfg!(feature = "profiler") {
+                ctx.builder.get_local(&address_local);
+                ctx.builder.get_local(&entry_local);
+                ctx.builder.call_fn2("report_safe_read_write_jit_slow");
+            }
+
+            ctx.builder.get_local(&address_local);
+
+            // packed lower bits of eip and wasm table index
+            ctx.builder.const_i32(
+                ctx.start_of_current_instruction as i32 & 0xFFF
+                    | (ctx.wasm_table_index.to_u16() as i32) << 16,
+            );
+
+            match bits {
+                BitSize::BYTE => {
+                    ctx.builder.call_fn2_ret("safe_read_write8_slow_jit");
+                },
+                BitSize::WORD => {
+                    ctx.builder.call_fn2_ret("safe_read_write16_slow_jit");
+                },
+                BitSize::DWORD => {
+                    ctx.builder.call_fn2_ret("safe_read_write32s_slow_jit");
+                },
+                BitSize::QWORD => {
+                    ctx.builder.call_fn2_ret("safe_read_write64_slow_jit");
+                },
+                BitSize::DQWORD => {
+                    dbg_assert!(false);
+                },
+            }
+            ctx.builder.tee_local(&entry_local);
             ctx.builder.const_i32(1);
             ctx.builder.and_i32();
+
+            if cfg!(feature = "profiler") {
+                ctx.builder.if_void();
+                gen_debug_track_jit_exit(ctx.builder, ctx.start_of_current_instruction);
+                ctx.builder.block_end();
+
+                ctx.builder.get_local(&entry_local);
+                ctx.builder.const_i32(1);
+                ctx.builder.and_i32();
+            }
+
+            ctx.builder.br_if(ctx.exit_with_fault_label);
         }
 
-        ctx.builder.br_if(ctx.exit_with_fault_label);
+        ctx.builder.block_end();
+
+        gen_profiler_stat_increment(ctx.builder, profiler::stat::SAFE_READ_WRITE_FAST); // XXX: Also slow
+
+        ctx.builder.get_local(&entry_local);
+        ctx.builder.const_i32(!0xFFF);
+        ctx.builder.and_i32();
+        ctx.builder.get_local(&address_local);
+        ctx.builder.xor_i32();
+        if unsafe { JIT_BAIL } {
+            gen_mem_group_create(ctx, expr, true, epoch);
+        }
+        ctx.builder.free_local(entry_local);
     }
-
-    ctx.builder.block_end();
-
-    gen_profiler_stat_increment(ctx.builder, profiler::stat::SAFE_READ_WRITE_FAST); // XXX: Also slow
-
-    ctx.builder.get_local(&entry_local);
-    ctx.builder.const_i32(!0xFFF);
-    ctx.builder.and_i32();
-    ctx.builder.get_local(&address_local);
-    ctx.builder.xor_i32();
-
-    ctx.builder.free_local(entry_local);
     let phys_addr_local = ctx.builder.tee_new_local();
 
     match bits {
@@ -1434,13 +1784,29 @@ pub fn gen_pop32s_ss32(ctx: &mut JitContext) {
     }
     else {
         let reg = ctx.register_locals[regs::ESP as usize].unsafe_clone();
+        if unsafe { JIT_MEM_GROUPS && JIT_BAIL } {
+            ctx.pending_addr = Some(PendingAddr {
+                key: AddrKey {
+                    first_reg: Some(regs::ESP),
+                    second_reg: None,
+                    shift: 0,
+                },
+                disp: 0,
+                body_pos: ctx.builder.body_len(),
+                epoch: ctx.builder.epoch,
+                stamp: ctx.builder.reg_write_count,
+                reg_local: Some(reg.idx()),
+            });
+        }
         gen_safe_read32(ctx, &reg);
     }
 
     gen_get_reg32(ctx, regs::ESP);
     ctx.builder.const_i32(4);
     ctx.builder.add_i32();
+    let before = reg_write_state(ctx, regs::ESP);
     gen_set_reg32(ctx, regs::ESP);
+    mem_groups_reg_adjusted(ctx, regs::ESP, 4, before);
 
     // return value is already on stack
 }
@@ -1639,13 +2005,24 @@ pub fn gen_push32(ctx: &mut JitContext, value_local: &WasmLocal) {
     }
     else {
         // short path: The address written to is equal to ESP/SP minus four
+        gen_set_pending_addr(
+            ctx,
+            AddrKey {
+                first_reg: Some(regs::ESP),
+                second_reg: None,
+                shift: 0,
+            },
+            -4,
+        );
         let new_sp_local = ctx.builder.tee_new_local();
         gen_safe_write32(ctx, &new_sp_local, &value_local);
         new_sp_local
     };
 
+    let before = reg_write_state(ctx, regs::ESP);
     if ctx.cpu.ssize_32() {
         gen_set_reg32(ctx, regs::ESP);
+        mem_groups_reg_adjusted(ctx, regs::ESP, -4, before);
     }
     else {
         gen_set_reg16(ctx, regs::SP);

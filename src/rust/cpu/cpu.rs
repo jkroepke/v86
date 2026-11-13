@@ -354,7 +354,9 @@ pub static mut in_jit: bool = false;
 /// Set by JIT code that left its module at a memory access that missed the fast path
 /// (codegen::JIT_BAIL): the next cycle must run the interpreter, even when the instruction
 /// starts a compiled block, else the module would be entered and bail again.
-pub static mut jit_bailed: bool = false;
+/// Set by the bail block of a module (codegen::JIT_BAIL): 1 for a missed TLB fast path, 2 for
+/// an access outside the page of its group (codegen::MemGroup)
+pub static mut jit_bailed: u8 = 0;
 
 pub enum JitExitReason {
     None,
@@ -3445,7 +3447,7 @@ unsafe fn cycle_internal_inner() -> bool {
 
             if initial_state_flags == c.state_flags {
                 let state = c.state_table[initial_eip as usize & 0xFFF];
-                if state != u16::MAX && !jit_bailed {
+                if state != u16::MAX && jit_bailed == 0 {
                     jit_entry = Some((c.wasm_table_index.to_u16(), state));
                 }
                 else {
@@ -3543,9 +3545,13 @@ unsafe fn cycle_internal_inner() -> bool {
     }
     else {
         *previous_ip = initial_eip;
-        let bailed = jit_bailed;
-        jit_bailed = false;
+        let bailed = jit_bailed != 0;
+        let group_miss = jit_bailed == 2;
+        jit_bailed = 0;
         let phys_addr = return_on_pagefault!(get_phys_eip(), false);
+        if group_miss {
+            jit::mem_group_missed(phys_addr);
+        }
 
         match tlb_code[(initial_eip as u32 >> 12) as usize] {
             None => {},

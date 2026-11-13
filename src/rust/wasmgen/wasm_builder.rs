@@ -92,6 +92,15 @@ pub struct WasmBuilder {
     free_locals_i64: Vec<WasmLocalI64>,
     local_count: u8,
     pub arg_local_initial_state: WasmLocal,
+
+    /// Incremented by everything after which no memory access check of codegen (see
+    /// codegen::MemGroup) holds: calls and the start or end of a wasm block, loop or if
+    pub epoch: u32,
+    /// Counts writes to the locals of the guest registers (reg_locals); reg_last_write[r] is
+    /// the count after the last write to register r
+    pub reg_write_count: u32,
+    pub reg_last_write: [u32; 8],
+    reg_locals: (u8, u8),
 }
 
 #[derive(Eq, PartialEq)]
@@ -138,6 +147,10 @@ impl WasmBuilder {
             free_locals_i64: Vec::with_capacity(8),
             local_count: 0,
             arg_local_initial_state: WasmLocal(0),
+            epoch: 0,
+            reg_write_count: 0,
+            reg_last_write: [0; 8],
+            reg_locals: (0, 0),
         };
         b.init();
         b
@@ -169,6 +182,7 @@ impl WasmBuilder {
         self.free_locals_i32.clear();
         self.free_locals_i64.clear();
         self.local_count = 0;
+        self.reg_locals = (0, 0);
 
         dbg_assert!(self.label_to_depth.is_empty());
         dbg_assert!(self.label_stack.is_empty());
@@ -553,7 +567,22 @@ impl WasmBuilder {
     pub fn get_output_ptr(&self) -> *const u8 { self.output.as_ptr() }
     pub fn get_output_len(&self) -> u32 { self.output.len() as u32 }
 
+    /// The locals from `first` to `first + 7` hold the guest registers (in order): writes to
+    /// them are counted in reg_last_write
+    pub fn set_register_locals(&mut self, first: &WasmLocal, last: &WasmLocal) {
+        dbg_assert!(last.0 == first.0 + 7);
+        self.reg_locals = (first.0, last.0 + 1);
+    }
+    #[inline(always)]
+    fn note_write(&mut self, local: u8) {
+        if local >= self.reg_locals.0 && local < self.reg_locals.1 {
+            self.reg_write_count += 1;
+            self.reg_last_write[(local - self.reg_locals.0) as usize] = self.reg_write_count;
+        }
+    }
+
     fn open_block(&mut self) -> Label {
+        self.epoch += 1;
         let label = self.next_label;
         self.next_label = self.next_label.next();
         self.label_to_depth
@@ -562,6 +591,7 @@ impl WasmBuilder {
         label
     }
     fn close_block(&mut self) {
+        self.epoch += 1;
         let label = self.label_stack.pop().unwrap();
         let old_depth = self.label_to_depth.remove(&label).unwrap();
         dbg_assert!(self.label_to_depth.len() + 1 == old_depth);
@@ -601,10 +631,12 @@ impl WasmBuilder {
         local
     }
     pub fn set_local(&mut self, local: &WasmLocal) {
+        self.note_write(local.0);
         self.instruction_body.push(op::OP_SETLOCAL);
         self.instruction_body.push(local.idx());
     }
     pub fn tee_local(&mut self, local: &WasmLocal) {
+        self.note_write(local.0);
         self.instruction_body.push(op::OP_TEELOCAL);
         self.instruction_body.push(local.idx());
     }
@@ -929,6 +961,7 @@ impl WasmBuilder {
 
     pub fn else_(&mut self) {
         dbg_assert!(!self.label_stack.is_empty());
+        self.epoch += 1;
         self.instruction_body.push(op::OP_ELSE);
     }
 
@@ -987,6 +1020,7 @@ impl WasmBuilder {
 
     fn call_fn(&mut self, name: &str, function: FunctionType) {
         let i = self.get_fn_idx(name, function);
+        self.epoch += 1;
         self.instruction_body.push(op::OP_CALL);
         write_leb_u32(&mut self.instruction_body, i as u32);
     }
@@ -1029,6 +1063,13 @@ impl WasmBuilder {
     pub fn unreachable(&mut self) { self.instruction_body.push(op::OP_UNREACHABLE) }
 
     pub fn instruction_body_length(&self) -> u32 { self.instruction_body.len() as u32 }
+    /// True when the code from `pos` to the end is exactly a set_local or tee_local of `local`
+    pub fn is_set_local_since(&self, pos: usize, local: &WasmLocal) -> bool {
+        self.instruction_body.len() == pos + 2
+            && (self.instruction_body[pos] == op::OP_SETLOCAL
+                || self.instruction_body[pos] == op::OP_TEELOCAL)
+            && self.instruction_body[pos + 1] == local.0
+    }
 }
 
 #[cfg(test)]
