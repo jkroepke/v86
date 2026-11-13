@@ -113,11 +113,22 @@ time goes.
   Hence one page per module (`set_jit_config(1, n)` sets more).
 - Dead ends: no two modules have the same bytes (a cache by content is
   useless); a back-off for pages that are compiled again (threshold <<
-  n) cut nothing, the pages really have new hot code; 55 % of the bytes
-  of a module never run in its life, but the interpreter runs through
-  jumps, so it cannot tell which blocks ran; a module for only the new
-  entry points of a page would save ~16 % of the bytes (profiler
-  counters RECOMPILE_*), not done.
+  n) cut nothing, the pages really have new hot code; a module for only
+  the new entry points of a page would save ~16 % of the bytes (profiler
+  counters RECOMPILE_*; with cold blocks left out, recompiles are ~27 %
+  of the bytes of spring, so ~10 % at most), not done: a page would need
+  two modules and the state table one module per entry.
+- Cold blocks: 55 % of the bytes of a module never ran in its life. The
+  interpreter now marks where it went on after each conditional jump
+  (one bit per byte of the page, `mark_conditional_jump`), and the
+  analysis follows only marked edges; an unmarked edge leaves the module
+  like a jump to another page. Cold bytes 55 % -> 15-20 %. Also leaving
+  out the instruction after a call or block boundary unless it ran saved
+  nothing. A lower JIT threshold (400k) with cold blocks: main thread of
+  goapp/cpu -5..12 %, but spring slower and process CPU higher; 750k
+  stays.
+- Where the bytes of a module go: about 40 % are the inline TLB checks
+  of memory accesses (~48 bytes each, ~one per 120 bytes of module).
 - Measure process CPU, not only the main thread: `tools/pod-bench`
   reports the main thread; read `/proc/self/stat` for all threads.
 
@@ -208,6 +219,19 @@ time goes.
   5730 / 11850 ms. spring (one round each): 87.4 / 161.5 s -> 84.6 /
   137.2 s. In headless Chromium nginx answers after 0.79 s instead of
   1.39 s. If modules get cheaper to compile, measure the threshold again.
-
+- Cold blocks (2026-11-13): JIT modules contain only the blocks that the
+  interpreter reached through a conditional jump before the page got hot
+  (marks per page in `jit.rs`, a pool of 4096 slots of 512 bytes; a page
+  without a slot is compiled whole; `set_jit_config(7, 0)` turns it off;
+  forced compiles of the tests compile all blocks). Wasm bytes compiled:
+  spring 135 -> 87 MB, cpu 9.4 -> 5.5, goapp 15.0 -> 10.4, nginx 4.2 ->
+  3.3 MB (profiler build, threshold 200k); recompiles of spring 505 ->
+  558. Against 61a717b (threshold 750k), process / main CPU, medians of
+  3-4 x 2-3 rounds (spring 3 x 1) in Node.js: spring 133.9 / 82.1 -> 109.8 /
+  77.1 s (wall 83.9 -> 78.8 s), goapp 3.85 / 1.91 -> 3.31 / 1.96 s, cpu
+  9.23 / 5.85 -> 8.11 / 5.88 s, glibc 11.88 / 5.70 -> 9.17 / 5.55 s,
+  nginx 1.16 / 0.71 s (no change: few modules at 750k). Headless
+  Chromium, CPU of all browser processes: cpu 29.4 -> 24.4 s (wall per
+  round 6.02 -> 5.83 s), nginx 7.18 -> 6.46 s (wall 694 -> 688 ms).
 
 Work in progress lives on `wip/*` and `codex/*` branches.

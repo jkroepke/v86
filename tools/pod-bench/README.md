@@ -33,7 +33,7 @@ instructions (32-bit counter: wraps for spring). Run-to-run noise is about
 
 - `V86=<dir>`: directory with `v86.wasm` and `libv86.mjs` (default `build/`)
 - `JITCFG="k=v,..."`: `cpu.set_jit_config(k, v)` (0 JIT off, 1 pages per module,
-  2 loop safety, 3 extra basic blocks, 4 JIT threshold, 5 SIMD off with 0)
+  2 loop safety, 3 extra basic blocks, 4 JIT threshold, 5 SIMD off with 0, 7 cold blocks off with 0)
 - `CPUHIDE="0=0x2000202,1=0x20000000"`: `set_cpuid_hidden(i, bits)`, here the CPUID
   without pclmulqdq, ssse3, aes (0: leaf 1 ecx) and sha (1: leaf 7 ebx)
 - `PCPU=1`: also print the CPU time of the whole process per round. V8 compiles the JIT
