@@ -29,5 +29,12 @@ base = origin/master cbac223.
   Rebased onto 61a717b (conflict in jit_run_interpreted resolved). Builds: cold/m2 (master),
   cold/c2 (rebased). Running A/B m2 vs c2 (cold/ab2-*.out).
 
+- A/B vs 61a717b (cold/ab2-*, ab3-*): spring process 133.9 -> 109.8 s, main 82.1 -> 77.1;
+  goapp 3.85 -> 3.31; cpu 9.23 -> 8.11 (main same); glibc 11.88 -> 9.17; nginx same.
+  Threshold 400k with c2: spring worse, keep 750k. Chromium (cold/pw-*.out, pwc.cjs):
+  cpu browser CPU 29.4 -> 24.4 s, nginx 7.18 -> 6.46 s, wall same.
+- tests passed (nasmtests, force-jit, rust-test); debug build runs nginx/goapp/cpu clean.
+- Next: squash, push master, dist.
+
 ## Next
 - profiler stats (cold edges, evictions, bytes), goapp, spring, A/B
