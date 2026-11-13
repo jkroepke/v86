@@ -159,6 +159,8 @@ impl WasmBuilder {
         self.initial_static_size = self.output.len();
     }
 
+    pub fn body_len(&self) -> usize { self.instruction_body.len() }
+
     pub fn reset(&mut self) {
         self.output.drain(self.initial_static_size..);
         self.set_import_table_size(2);

@@ -151,6 +151,16 @@ pub enum stat {
     MODULE_BYTES_PAGES_1,
     MODULE_BYTES_PAGES_2,
     MODULE_BYTES_PAGES_3_MORE,
+    MODULE_BLOCKS_EXECUTED,
+    MODULE_BLOCKS_COLD,
+    MODULE_BLOCK_BYTES_EXECUTED,
+    MODULE_BLOCK_BYTES_COLD,
+    MODULE_BLOCK_BYTES_ENTRY_EXECUTED,
+    MODULE_BLOCK_BYTES_ENTRY_COLD,
+    MODULE_BLOCKS_ENTRY_EXECUTED,
+    MODULE_BLOCKS_ENTRY_COLD,
+    RECOMPILE_BLOCK_BYTES,
+    RECOMPILE_DELTA_BLOCK_BYTES,
 }
 
 #[allow(non_upper_case_globals)]
@@ -188,6 +198,79 @@ static mut MODULE_BYTES: [u32; MODULES] = [0; MODULES];
 // Per physical page: number of modules compiled for it, invalidations with code
 static mut PAGE_COMPILES: [u16; PAGES] = [0; PAGES];
 static mut PAGE_INVALIDATIONS: [u16; PAGES] = [0; PAGES];
+
+// profiler: basic blocks (address, code bytes) per module, executed (module, address)
+static mut BLOCKS: Option<crate::hash::HashMap<u16, Vec<(u32, u32, bool)>>> = None;
+static mut EXECUTED: Option<crate::hash::HashSet<(u16, u32)>> = None;
+
+#[allow(static_mut_refs)]
+pub fn module_blocks(index: u16, blocks: Vec<(u32, u32, bool)>) {
+    if !cfg!(feature = "profiler") {
+        return;
+    }
+    unsafe {
+        let ex = EXECUTED.get_or_insert_with(Default::default);
+        for &(a, _, _) in &blocks {
+            ex.remove(&(index, a));
+        }
+        BLOCKS.get_or_insert_with(Default::default).insert(index, blocks);
+    }
+}
+
+#[allow(static_mut_refs)]
+pub fn module_delta(index: u16, delta: &crate::hash::HashSet<u32>) {
+    if !cfg!(feature = "profiler") {
+        return;
+    }
+    unsafe {
+        if let Some(blocks) = BLOCKS.as_ref().and_then(|b| b.get(&index)) {
+            for &(a, bytes, _) in blocks {
+                stat_increment_by(stat::RECOMPILE_BLOCK_BYTES, bytes as u64);
+                if delta.contains(&a) {
+                    stat_increment_by(stat::RECOMPILE_DELTA_BLOCK_BYTES, bytes as u64);
+                }
+            }
+        }
+    }
+}
+
+#[allow(static_mut_refs)]
+pub fn block_entered(index: u16, addr: u32) {
+    if cfg!(feature = "profiler") {
+        unsafe {
+            EXECUTED.get_or_insert_with(Default::default).insert((index, addr));
+        }
+    }
+}
+
+#[allow(static_mut_refs)]
+fn count_blocks(index: u16) {
+    unsafe {
+        let blocks = match BLOCKS.as_mut().and_then(|b| b.remove(&index)) {
+            Some(b) => b,
+            None => return,
+        };
+        let ex = EXECUTED.get_or_insert_with(Default::default);
+        for (a, bytes, entry) in blocks {
+            let executed = ex.remove(&(index, a));
+            if entry {
+                stat_increment(if executed { stat::MODULE_BLOCKS_ENTRY_EXECUTED } else { stat::MODULE_BLOCKS_ENTRY_COLD });
+                stat_increment_by(
+                    if executed { stat::MODULE_BLOCK_BYTES_ENTRY_EXECUTED } else { stat::MODULE_BLOCK_BYTES_ENTRY_COLD },
+                    bytes as u64,
+                );
+            }
+            if executed {
+                stat_increment(stat::MODULE_BLOCKS_EXECUTED);
+                stat_increment_by(stat::MODULE_BLOCK_BYTES_EXECUTED, bytes as u64);
+            }
+            else {
+                stat_increment(stat::MODULE_BLOCKS_COLD);
+                stat_increment_by(stat::MODULE_BLOCK_BYTES_COLD, bytes as u64);
+            }
+        }
+    }
+}
 
 pub fn module_entered(index: u16) {
     if cfg!(feature = "profiler") {
@@ -251,6 +334,7 @@ pub fn module_freed(index: u16) {
             return;
         }
         MODULE_BYTES[index as usize] = 0;
+        count_blocks(index);
         stat_increment(stat::MODULE_FREED);
         bucket_module(MODULE_ENTRIES[index as usize], bytes);
     }
@@ -280,6 +364,7 @@ pub fn profiler_flush() {
         for i in 0..MODULES {
             if MODULE_BYTES[i] != 0 {
                 bucket_module(MODULE_ENTRIES[i], MODULE_BYTES[i]);
+                count_blocks(i as u16);
             }
         }
         #[allow(static_mut_refs)]
@@ -300,6 +385,8 @@ pub fn profiler_flush() {
 #[no_mangle]
 pub fn profiler_init() {
     unsafe {
+        BLOCKS = None;
+        EXECUTED = None;
         #[allow(static_mut_refs)]
         for x in MODULE_ENTRIES.iter_mut() {
             *x = 0

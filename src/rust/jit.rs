@@ -985,6 +985,63 @@ fn jit_analyze_and_generate(
         );
     }
 
+    // profiler: the blocks that a module for only the new entry points would need, if it
+    // left the module at the entry points of the existing modules of its pages
+    let delta: Option<HashSet<u32>> = if cfg!(feature = "profiler") {
+        let mut old = HashSet::default();
+        for p in &pages {
+            if let Some(info) = ctx.pages.get(p) {
+                for &(off, _) in &info.entry_points {
+                    old.insert(p.to_address() | off as u32);
+                }
+            }
+        }
+        if old.is_empty() {
+            None
+        }
+        else {
+            let by_addr: HashMap<u32, &BasicBlock> =
+                basic_blocks.iter().map(|b| (b.addr, b)).collect();
+            let mut visited = HashSet::default();
+            let mut stack: Vec<u32> = basic_blocks
+                .iter()
+                .filter(|b| b.is_entry_block && !old.contains(&b.addr))
+                .map(|b| b.addr)
+                .collect();
+            while let Some(a) = stack.pop() {
+                if old.contains(&a) || !visited.insert(a) {
+                    continue;
+                }
+                if let Some(b) = by_addr.get(&a) {
+                    match &b.ty {
+                        BasicBlockType::Normal { next_block_addr: n, .. } => {
+                            if let Some(n) = n {
+                                stack.push(*n)
+                            }
+                        },
+                        BasicBlockType::ConditionalJump {
+                            next_block_addr: n,
+                            next_block_branch_taken_addr: t,
+                            ..
+                        } => {
+                            if let Some(n) = n {
+                                stack.push(*n)
+                            }
+                            if let Some(t) = t {
+                                stack.push(*t)
+                            }
+                        },
+                        _ => {},
+                    }
+                }
+            }
+            Some(visited)
+        }
+    }
+    else {
+        None
+    };
+
     let graph = control_flow::make_graph(&basic_blocks);
     let mut structure = control_flow::loopify(&graph);
 
@@ -1069,6 +1126,9 @@ fn jit_analyze_and_generate(
         code.entry_points.push((addr as u16 & 0xFFF, state));
     }
 
+    if let Some(delta) = &delta {
+        profiler::module_delta(wasm_table_index.to_u16(), delta);
+    }
     profiler::stat_increment_by(
         stat::COMPILE_WASM_TOTAL_BYTES,
         ctx.wasm_builder.get_output_len() as u64,
@@ -1359,7 +1419,20 @@ fn jit_generate_module(
         .map(|x| Work::WasmStructure(x))
         .collect();
 
+    // profiler: code bytes per basic block (until the next work item)
+    let mut block_bytes: Vec<(u32, u32, bool)> = Vec::new();
+    let mut current_block: Option<(u32, usize, bool)> = None;
+
     while let Some(block) = work.pop_front() {
+        if cfg!(feature = "profiler") {
+            if let Some((addr, start, e)) = current_block.take() {
+                block_bytes.push((addr, (ctx.builder.body_len() - start) as u32, e));
+            }
+            if let Work::WasmStructure(WasmStructure::BasicBlock(addr)) = &block {
+                let e = basic_blocks.get(addr).map_or(false, |b| b.is_entry_block);
+                current_block = Some((*addr, ctx.builder.body_len(), e));
+            }
+        }
         let next_addr: Option<Vec<u32>> = work.iter().find_map(|x| match x {
             Work::WasmStructure(l) => Some(l.head().collect()),
             _ => None,
@@ -2068,6 +2141,11 @@ fn jit_generate_module(
         codegen::gen_update_instruction_counter(ctx);
     }
 
+    if let Some((addr, start, e)) = current_block.take() {
+        block_bytes.push((addr, (ctx.builder.body_len() - start) as u32, e));
+    }
+    profiler::module_blocks(wasm_table_index.to_u16(), block_bytes);
+
     for local in ctx.register_locals.drain(..) {
         ctx.builder.free_local(local);
     }
@@ -2115,7 +2193,8 @@ fn jit_generate_basic_block(ctx: &mut JitContext, block: &BasicBlock) {
 
     if cfg!(feature = "profiler") {
         ctx.builder.const_i32(start_addr as i32);
-        ctx.builder.call_fn1("enter_basic_block");
+        ctx.builder.const_i32(ctx.wasm_table_index.to_u16() as i32);
+        ctx.builder.call_fn2("enter_basic_block");
     }
 
     ctx.builder.get_local(&ctx.instruction_counter);
@@ -2585,7 +2664,8 @@ pub fn check_dispatcher_target(target_index: i32, max: i32) {
 
 #[no_mangle]
 #[cfg(feature = "profiler")]
-pub fn enter_basic_block(phys_eip: u32) {
+pub fn enter_basic_block(phys_eip: u32, wasm_table_index: u32) {
+    profiler::block_entered(wasm_table_index as u16, phys_eip);
     let eip =
         unsafe { cpu::translate_address_read(*global_pointers::instruction_pointer).unwrap() };
     if Page::page_of(eip) != Page::page_of(phys_eip) {

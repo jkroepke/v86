@@ -31,6 +31,21 @@ Statnames for this branch: /home/claude/bench/compile/statnames.json.
 - RECOMPILE_BACKOFF (set_jit_config(6, n), default 0 = off): a page needs
   JIT_THRESHOLD << min(modules+invalidations, n) for its next module.
 
+- NOTE: profiler builds generate ~2x the wasm (enter_basic_block calls etc.):
+  release spring = ~1288 modules / 111.5 MB (incl. boot), profiler 211 MB.
+- identical modules (sha1 of bytes, release spring): 0 of 1288 -> a cache by
+  content is useless.
+- backoff 6=2 (stats run): 1171 compiles / 215 MB (vs 1212 / 211 MB),
+  interpreted steps +11 %: recompiles are pages with genuinely new hot code.
+  Back-off does not pay.
+- tiering rep 1: no-dynamic-tiering main 109.9 / process 297.7 s; budget 10x
+  104.3 / 278.5 s -> almost all compiled bytes get TF anyway (hot).
+- JITCFG rep 1 (main / process s): default 96.3 / 269.7; 1=1 97.7 / 228.2;
+  1=2 99.8 / 246.4.
+- nginx cold code (profiler): 55 % of block bytes never run in their module.
+- counters RECOMPILE_BLOCK_BYTES / RECOMPILE_DELTA_BLOCK_BYTES: bytes a
+  module for only the new entry points would need (stops at old entries).
+
 ## Next
 - tiering flags on spring (compile/tier.sh -> compile/tier.out)
 - spring STATS run (compile/stats-spring.txt)
