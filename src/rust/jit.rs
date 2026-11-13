@@ -1421,6 +1421,7 @@ fn update_tlb_code_ctx(ctx: &JitState, virt_page: Page, phys_page: Page) {
                     wasm_table_index: info.wasm_table_index,
                     state_flags: info.state_flags,
                     state_table,
+                    zero: 0,
                 })));
                 cpu::tlb_code[virt_page.to_u32() as usize] = Some(c);
                 c.as_mut()
@@ -1643,15 +1644,54 @@ fn jit_generate_module(
                     },
                     BasicBlockType::AbsoluteEip => {
                         // Check if we can stay in this module, if not exit
+                        // Inlined jit_find_cache_entry_in_page: a call would make V8 spill
+                        // every live local around it
+                        codegen::gen_profiler_stat_increment(ctx.builder, stat::INDIRECT_JUMP);
                         codegen::gen_get_eip(ctx.builder);
-                        ctx.builder.const_i32(wasm_table_index.to_u16() as i32);
-                        ctx.builder.const_i32(state_flags.to_u32() as i32);
-                        ctx.builder.call_fn3_ret("jit_find_cache_entry_in_page");
-                        ctx.builder.tee_local(target_block);
-                        ctx.builder.const_i32(0);
-                        ctx.builder.ge_i32();
+                        let eip_local = ctx.builder.set_new_local();
+                        ctx.builder.const_i32(-1);
+                        ctx.builder.set_local(target_block);
+                        let miss = ctx.builder.block_void();
+                        // code = tlb_code[eip >> 12]
+                        ctx.builder.get_local(&eip_local);
+                        ctx.builder.const_i32(12);
+                        ctx.builder.shr_u_i32();
+                        ctx.builder.const_i32(2);
+                        ctx.builder.shl_i32();
+                        ctx.builder.load_aligned_i32(&raw const cpu::tlb_code as u32);
+                        let code_local = ctx.builder.tee_new_local();
+                        ctx.builder.eqz_i32();
+                        ctx.builder.br_if(miss);
+                        // same module and state flags
+                        ctx.builder.get_local(&code_local);
+                        ctx.builder.load_aligned_i32(cpu::CODE_KEY_OFFSET);
+                        ctx.builder.const_i32(
+                            wasm_table_index.to_u16() as i32 | (state_flags.to_u32() as i32) << 16,
+                        );
+                        ctx.builder.ne_i32();
+                        ctx.builder.br_if(miss);
+                        // target_block = code.state_table[eip & 0xFFF] (u16::MAX: no entry)
+                        ctx.builder.get_local(&code_local);
+                        ctx.builder.get_local(&eip_local);
+                        ctx.builder.const_i32(0xFFF);
+                        ctx.builder.and_i32();
+                        ctx.builder.const_i32(1);
+                        ctx.builder.shl_i32();
+                        ctx.builder.add_i32();
+                        ctx.builder.load_aligned_u16(0);
+                        ctx.builder.set_local(target_block);
+                        ctx.builder.block_end();
+                        ctx.builder.free_local(code_local);
+                        ctx.builder.free_local(eip_local);
+                        ctx.builder.get_local(target_block);
+                        ctx.builder.const_i32(u16::MAX as i32);
+                        ctx.builder.ltu_i32();
                         // TODO: Could make this unconditional by including exit_label in the main br_table
                         ctx.builder.br_if(main_loop_label);
+                        codegen::gen_profiler_stat_increment(
+                            ctx.builder,
+                            stat::INDIRECT_JUMP_NO_ENTRY,
+                        );
 
                         codegen::gen_debug_track_jit_exit(ctx.builder, block.last_instruction_addr);
                         ctx.builder.br(ctx.exit_label);

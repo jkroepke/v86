@@ -661,6 +661,23 @@ pub fn gen_safe_write128(
     )
 }
 
+/// Fast path test of a TLB entry as one comparison: OR bit 12 (set when the access of `bits`
+/// crosses into the next page) into the masked flags of the entry, then compare with
+/// TLB_VALID. Two compares joined by i32.and made V8 emit setcc/movzx/test chains.
+fn gen_or_page_cross_bit(ctx: &mut JitContext, address_local: &WasmLocal, bits: BitSize) {
+    if bits == BitSize::BYTE {
+        return;
+    }
+    ctx.builder.get_local(address_local);
+    ctx.builder.const_i32(0xFFF);
+    ctx.builder.and_i32();
+    ctx.builder.const_i32(bits.bytes() as i32 - 1);
+    ctx.builder.add_i32();
+    ctx.builder.const_i32(0x1000);
+    ctx.builder.and_i32();
+    ctx.builder.or_i32();
+}
+
 fn gen_safe_read(
     ctx: &mut JitContext,
     bits: BitSize,
@@ -697,19 +714,9 @@ fn gen_safe_read(
             & !(if ctx.cpu.cpl3() { 0 } else { TLB_NO_USER })) as i32,
     );
     ctx.builder.and_i32();
-
+    gen_or_page_cross_bit(ctx, address_local, bits);
     ctx.builder.const_i32(TLB_VALID as i32);
     ctx.builder.eq_i32();
-
-    if bits != BitSize::BYTE {
-        ctx.builder.get_local(&address_local);
-        ctx.builder.const_i32(0xFFF);
-        ctx.builder.and_i32();
-        ctx.builder.const_i32(0x1000 - bits.bytes() as i32);
-        ctx.builder.le_i32();
-
-        ctx.builder.and_i32();
-    }
 
     ctx.builder.br_if(cont);
 
@@ -918,19 +925,9 @@ fn gen_safe_write(
             as i32,
     );
     ctx.builder.and_i32();
-
+    gen_or_page_cross_bit(ctx, address_local, bits);
     ctx.builder.const_i32(TLB_VALID as i32);
     ctx.builder.eq_i32();
-
-    if bits != BitSize::BYTE {
-        ctx.builder.get_local(&address_local);
-        ctx.builder.const_i32(0xFFF);
-        ctx.builder.and_i32();
-        ctx.builder.const_i32(0x1000 - bits.bytes() as i32);
-        ctx.builder.le_i32();
-
-        ctx.builder.and_i32();
-    }
 
     ctx.builder.br_if(cont);
 
@@ -1072,18 +1069,9 @@ pub fn gen_safe_read_write(
             as i32,
     );
     ctx.builder.and_i32();
-
+    gen_or_page_cross_bit(ctx, address_local, bits);
     ctx.builder.const_i32(TLB_VALID as i32);
     ctx.builder.eq_i32();
-
-    if bits != BitSize::BYTE {
-        ctx.builder.get_local(&address_local);
-        ctx.builder.const_i32(0xFFF);
-        ctx.builder.and_i32();
-        ctx.builder.const_i32(0x1000 - bits.bytes() as i32);
-        ctx.builder.le_i32();
-        ctx.builder.and_i32();
-    }
 
     let can_use_fast_path_local = ctx.builder.tee_new_local();
 

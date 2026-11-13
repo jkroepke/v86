@@ -331,11 +331,16 @@ pub static mut tsc_speed: u64 = 1;
 // used for restoring the state
 pub static mut tsc_offset: u64 = 0;
 
+// The JIT reads this struct from generated code (jit_find_cache_entry_in_page is inlined):
+// state_table at 0, then wasm_table_index, state_flags and a zero byte as one u32 at 0x2000.
+#[repr(C)]
 pub struct Code {
+    pub state_table: [u16; 0x1000],
     pub wasm_table_index: jit::WasmTableIndex,
     pub state_flags: CachedStateFlags,
-    pub state_table: [u16; 0x1000],
+    pub zero: u8,
 }
+pub const CODE_KEY_OFFSET: u32 = 0x2000;
 
 pub static mut tlb_data: [i32; 0x100000] = [0; 0x100000];
 pub static mut tlb_code: [Option<ptr::NonNull<Code>>; 0x100000] = [None; 0x100000];
