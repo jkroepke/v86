@@ -420,7 +420,10 @@ function gen_table()
             "#![cfg_attr(rustfmt, rustfmt_skip)]",
 
             "use crate::cpu::cpu::{after_block_boundary, modrm_resolve, read_modrm_byte};",
-            "use crate::cpu::cpu::{read_imm8, read_imm8s, read_imm16, read_imm32s, read_moffs};",
+            "// the immediate values are read inline in this table",
+            "use crate::cpu::cpu::{read_imm8_inline as read_imm8, read_imm8s_inline as read_imm8s};",
+            "use crate::cpu::cpu::{read_imm16_inline as read_imm16, read_imm32s_inline as read_imm32s};",
+            "use crate::cpu::cpu::read_moffs;",
             "use crate::cpu::cpu::{task_switch_test, trigger_ud};",
             "use crate::cpu::cpu::{interpreter_loop_start, interpreter_loop_next};",
             "use crate::cpu::instructions;",

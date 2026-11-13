@@ -120,7 +120,9 @@ pub unsafe fn instr16_0E() {
 }
 pub unsafe fn instr32_0E() { return_on_pagefault!(push32_sreg(CS)) }
 
+#[inline(always)]
 pub unsafe fn instr16_0F() { run_instruction0f_16(return_on_pagefault!(read_imm8())); }
+#[inline(always)]
 pub unsafe fn instr32_0F() { run_instruction0f_32(return_on_pagefault!(read_imm8())); }
 
 pub unsafe fn instr_10_mem(addr: i32, r: i32) { safe_read_write8(addr, &|x| adc8(x, read_reg8(r))) }
@@ -838,6 +840,7 @@ pub unsafe fn instr16_89_mem(addr: i32, r: i32) {
     return_on_pagefault!(safe_write16(addr, read_reg16(r)));
 }
 pub unsafe fn instr32_89_reg(r2: i32, r: i32) { write_reg32(r2, read_reg32(r)); }
+#[inline(always)]
 pub unsafe fn instr32_89_mem(addr: i32, r: i32) {
     return_on_pagefault!(safe_write32(addr, read_reg32(r)));
 }
@@ -849,6 +852,7 @@ pub unsafe fn instr16_8B_mem(addr: i32, r: i32) {
     write_reg16(r, return_on_pagefault!(safe_read16(addr)));
 }
 pub unsafe fn instr16_8B_reg(r1: i32, r: i32) { write_reg16(r, read_reg16(r1)); }
+#[inline(always)]
 pub unsafe fn instr32_8B_mem(addr: i32, r: i32) {
     write_reg32(r, return_on_pagefault!(safe_read32s(addr)));
 }
