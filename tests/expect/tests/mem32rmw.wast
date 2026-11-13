@@ -109,7 +109,7 @@
                   (tee_local $l10
                     (call $e.safe_read_write32s_slow_jit
                       (get_local $l9)
-                      (i32.const 58916864)))
+                      (i32.const 196542464)))
                   (i32.const 1))))
             (set_local $l12
               (i32.load align=1
@@ -175,7 +175,7 @@
                     (call $e.safe_write32_slow_jit
                       (get_local $l9)
                       (get_local $l12)
-                      (i32.const 58916864))
+                      (i32.const 196542464))
                     (i32.const 1))
                   (then
                     (call $e.bug_gen_safe_read_write_page_fault

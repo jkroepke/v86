@@ -99,7 +99,7 @@
                     (call $e.safe_write32_slow_jit
                       (get_local $l10)
                       (get_local $l0)
-                      (i32.const 58916864)))
+                      (i32.const 196542464)))
                   (i32.const 1))))
             (i32.store align=1
               (i32.xor

@@ -86,7 +86,12 @@ fn known_entry_point_index(phys_address: u32) -> usize {
 // - v8 poorly handles large br_table elements and OOMs on modules much smaller than the above limit
 //   See https://bugs.chromium.org/p/v8/issues/detail?id=9697 and https://bugs.chromium.org/p/v8/issues/detail?id=9141
 //   Will hopefully be fixed in the near future by generating direct control flow
-static mut MAX_PAGES: u32 = 3;
+// - The cost of compiling a module grows faster than its size: V8's optimizing compiler
+//   (TurboFan), which compiles nearly every module after a while (dynamic tiering), needs
+//   ~0.7 us per byte for a 17 KB function and ~2.5 us per byte for a 170 KB one. Modules of
+//   one page made the CPU time of all threads 25-35 % smaller (spring, nginx, cpu, goapp in
+//   Node.js; cpu in Chrome), with the same or less time on the main thread.
+static mut MAX_PAGES: u32 = 1;
 
 static mut JIT_USE_LOOP_SAFETY: bool = true;
 
@@ -98,7 +103,10 @@ pub static mut JIT_THRESHOLD: u32 = 200 * 1000;
 pub const BRTABLE_CUTOFF: usize = 10;
 
 // needs to be synced to const.js
-pub const WASM_TABLE_SIZE: u32 = 900;
+// Modules of one page are about a third of the size of the modules of three pages that v86 made
+// before (with 900 slots), so 3000 slots bound the memory about the same. Spring (a JVM) makes
+// ~2300 modules; with 900 slots it filled the table and recompiled everything.
+pub const WASM_TABLE_SIZE: u32 = 3000;
 
 pub const CHECK_JIT_STATE_INVARIANTS: bool = false;
 
@@ -1063,11 +1071,12 @@ fn jit_analyze_and_generate(
     if ctx.wasm_table_index_free_list.is_empty() {
         dbg_log!("wasm_table_index_free_list empty, clearing cache");
 
-        // When no free slots are available, delete all cached modules. We could increase the
-        // size of the table, but this way the initial size acts as an upper bound for the
-        // number of wasm modules that we generate, which we want anyway to avoid getting our
-        // tab killed by browsers due to memory constraints.
-        jit_clear_cache(ctx);
+        // When no free slots are available, delete the modules that were entered least since
+        // the last time (at least half of them). We could increase the size of the table, but
+        // this way the initial size acts as an upper bound for the number of wasm modules that
+        // we generate, which we want anyway to avoid getting our tab killed by browsers due to
+        // memory constraints.
+        jit_evict_cold_modules(ctx);
 
         profiler::stat_increment(stat::INVALIDATE_ALL_MODULES_NO_FREE_WASM_INDICES);
 
@@ -2514,6 +2523,50 @@ pub fn jit_dirty_cache_small(start_addr: u32, end_addr: u32) {
     if start_page != end_page {
         dbg_assert!(start_page.to_u32() + 1 == end_page.to_u32());
         jit_dirty_page_ctx(&mut ctx, end_page);
+    }
+}
+
+// Entries into each module from the main loop since the last eviction
+pub static mut MODULE_USE: [u32; WASM_TABLE_SIZE as usize] = [0; WASM_TABLE_SIZE as usize];
+
+#[inline(always)]
+pub fn module_used(wasm_table_index: u16) {
+    unsafe {
+        let u = &mut MODULE_USE[wasm_table_index as usize];
+        *u = u.saturating_add(1);
+    }
+}
+
+fn jit_evict_cold_modules(ctx: &mut JitState) {
+    let mut uses: Vec<(u32, u16)> = ctx
+        .pages
+        .values()
+        .map(|i| {
+            let w = i.wasm_table_index.to_u16();
+            (unsafe { MODULE_USE[w as usize] }, w)
+        })
+        .collect();
+    uses.sort_unstable();
+    uses.dedup();
+    let limit = match uses.get(uses.len() / 2) {
+        Some(&(u, _)) => u,
+        None => 0,
+    };
+    let evict: Vec<Page> = ctx
+        .pages
+        .iter()
+        .filter(|(_, i)| unsafe { MODULE_USE[i.wasm_table_index.to_u16() as usize] } <= limit)
+        .map(|(&p, _)| p)
+        .collect();
+    for page in evict {
+        jit_dirty_page_ctx(ctx, page);
+    }
+    unsafe {
+        #[allow(static_mut_refs)]
+        MODULE_USE.fill(0);
+    }
+    if ctx.wasm_table_index_free_list.is_empty() {
+        jit_clear_cache(ctx);
     }
 }
 

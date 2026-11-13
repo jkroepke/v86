@@ -235,7 +235,7 @@
                     (call $e.safe_write32_slow_jit
                       (get_local $l12)
                       (get_local $l10)
-                      (i32.const 58916864)))
+                      (i32.const 196542464)))
                   (i32.const 1))))
             (i32.store align=1
               (i32.xor
@@ -255,7 +255,7 @@
                   (call $e.jit_find_cache_entry_in_page
                     (i32.load
                       (i32.const 556))
-                    (i32.const 899)
+                    (i32.const 2999)
                     (i32.const 3)))
                 (i32.const 0)))
             (br $B0))
