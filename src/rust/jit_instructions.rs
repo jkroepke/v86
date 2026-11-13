@@ -250,6 +250,39 @@ enum SimdOp {
     // v128.andnot(a, b) is a & !b, pandn is !dst & src
     Swapped(u8),
     Shuffle([u8; 16]),
+    // pshufb: i8x16.swizzle gives 0 for an index above 15, pshufb for an index with bit 7,
+    // and it uses only the low 4 bits else
+    Pshufb,
+    // palignr with a shift above 16: only bytes of the destination and zeros are left
+    ShuffleDstZero([u8; 16]),
+    Zero,
+}
+
+/// palignr: the result is byte `imm` and the 15 bytes after it of destination:source
+fn simd_palignr(imm: u32) -> Option<SimdOp> {
+    if !codegen::simd_enabled() {
+        return None;
+    }
+    let mut lanes = [0; 16];
+    if imm <= 16 {
+        // lanes 0-15 are the destination, 16-31 the source
+        for i in 0..16 {
+            let j = i + imm;
+            lanes[i as usize] = if j < 16 { 16 + j } else { j - 16 } as u8;
+        }
+        Some(SimdOp::Shuffle(lanes))
+    }
+    else if imm < 32 {
+        // lanes 0-15 are the destination, 16-31 are zero
+        for i in 0..16 {
+            let j = i + imm;
+            lanes[i as usize] = if j < 32 { j - 16 } else { 16 } as u8;
+        }
+        Some(SimdOp::ShuffleDstZero(lanes))
+    }
+    else {
+        Some(SimdOp::Zero)
+    }
 }
 
 fn simd_op_of(name: &str) -> Option<SimdOp> {
@@ -267,6 +300,18 @@ fn simd_op_of(name: &str) -> Option<SimdOp> {
         "instr_660FDF" => SimdOp::Swapped(op::SIMD_V128ANDNOT), // pandn
         "instr_660FEB" => SimdOp::Binary(op::SIMD_V128OR), // por
         "instr_660FEF" => SimdOp::Binary(op::SIMD_V128XOR), // pxor
+        "instr_660F3800" => SimdOp::Pshufb,
+        "instr_660F64" => SimdOp::Binary(op::SIMD_I8X16GTS), // pcmpgtb
+        "instr_660F65" => SimdOp::Binary(op::SIMD_I16X8GTS), // pcmpgtw
+        "instr_660F66" => SimdOp::Binary(op::SIMD_I32X4GTS), // pcmpgtd
+        "instr_660FFC" => SimdOp::Binary(op::SIMD_I8X16ADD), // paddb
+        "instr_660FFD" => SimdOp::Binary(op::SIMD_I16X8ADD), // paddw
+        "instr_660FFE" => SimdOp::Binary(op::SIMD_I32X4ADD), // paddd
+        "instr_660FD4" => SimdOp::Binary(op::SIMD_I64X2ADD), // paddq
+        "instr_660FF8" => SimdOp::Binary(op::SIMD_I8X16SUB), // psubb
+        "instr_660FF9" => SimdOp::Binary(op::SIMD_I16X8SUB), // psubw
+        "instr_660FFA" => SimdOp::Binary(op::SIMD_I32X4SUB), // psubd
+        "instr_660FFB" => SimdOp::Binary(op::SIMD_I64X2SUB), // psubq
         // punpckl*: interleave the low halves of destination (lanes 0-15) and source (16-31)
         "instr_660F60" => SimdOp::Shuffle([0, 16, 1, 17, 2, 18, 3, 19, 4, 20, 5, 21, 6, 22, 7, 23]),
         "instr_660F61" => SimdOp::Shuffle([0, 1, 16, 17, 2, 3, 18, 19, 4, 5, 20, 21, 6, 7, 22, 23]),
@@ -307,9 +352,70 @@ fn simd_apply(
             src(ctx);
             ctx.builder.i8x16_shuffle(&lanes);
         },
+        SimdOp::Pshufb => {
+            dst(ctx);
+            src(ctx);
+            ctx.builder.const_v128(&[0x8F; 16]);
+            ctx.builder.simd_op(op::SIMD_V128AND);
+            ctx.builder.simd_op(op::SIMD_I8X16SWIZZLE);
+        },
+        SimdOp::ShuffleDstZero(lanes) => {
+            dst(ctx);
+            ctx.builder.const_v128_zero();
+            ctx.builder.i8x16_shuffle(&lanes);
+        },
+        SimdOp::Zero => {
+            ctx.builder.const_v128_zero();
+        },
     }
     ctx.builder
         .store_aligned_v128(global_pointers::get_reg_xmm_offset(r));
+}
+
+/// Shift every lane of an xmm register by a constant. A count of the lane width or more gives
+/// zero, or the sign for an arithmetic shift; Wasm would take the count modulo the width.
+/// Returns false if the caller has to generate the call
+fn simd_shift_imm(ctx: &mut JitContext, r: u32, shift_op: u8, width: u32, imm: u32) -> bool {
+    if !codegen::simd_enabled() {
+        return false;
+    }
+    let arithmetic = shift_op == op::SIMD_I16X8SHRS || shift_op == op::SIMD_I32X4SHRS;
+    ctx.builder.const_i32(0);
+    if imm >= width && !arithmetic {
+        ctx.builder.const_v128_zero();
+    }
+    else {
+        codegen::gen_get_reg_xmm_v128(ctx, r);
+        ctx.builder.const_i32(imm.min(width - 1) as i32);
+        ctx.builder.simd_op(shift_op);
+    }
+    ctx.builder
+        .store_aligned_v128(global_pointers::get_reg_xmm_offset(r));
+    true
+}
+/// psrldq and pslldq: shift the register by whole bytes
+fn simd_shift_bytes(ctx: &mut JitContext, r: u32, left: bool, imm: u32) -> bool {
+    if !codegen::simd_enabled() {
+        return false;
+    }
+    // lanes 0-15 are the register, 16 is zero
+    let mut lanes = [16; 16];
+    for i in 0..16u32 {
+        if left && i >= imm {
+            lanes[i as usize] = (i - imm) as u8;
+        }
+        else if !left && i + imm < 16 {
+            lanes[i as usize] = (i + imm) as u8;
+        }
+    }
+    simd_apply(
+        ctx,
+        SimdOp::ShuffleDstZero(lanes),
+        &|ctx| codegen::gen_get_reg_xmm_v128(ctx, r),
+        &|_| {},
+        r,
+    );
+    true
 }
 
 fn simd_xmm_xmm(ctx: &mut JitContext, op: SimdOp, r1: u32, r2: u32) {
@@ -354,6 +460,11 @@ fn sse_read128_xmm_mem_imm(
     r: u32,
     imm: u32,
 ) {
+    if name == "instr_660F3A0F" {
+        if let Some(op) = simd_palignr(imm) {
+            return simd_xmm_mem(ctx, op, modrm_byte, r);
+        }
+    }
     let dest = global_pointers::sse_scratch_register as u32;
     codegen::gen_modrm_resolve_safe_read128(ctx, modrm_byte, dest);
     ctx.builder.const_i32(dest as i32);
@@ -382,6 +493,11 @@ fn sse_read128_xmm_xmm(ctx: &mut JitContext, name: &str, r1: u32, r2: u32) {
     ctx.builder.call_fn2(name);
 }
 fn sse_read128_xmm_xmm_imm(ctx: &mut JitContext, name: &str, r1: u32, r2: u32, imm: u32) {
+    if name == "instr_660F3A0F" {
+        if let Some(op) = simd_palignr(imm) {
+            return simd_xmm_xmm(ctx, op, r1, r2);
+        }
+    }
     // Make a copy to avoid aliasing problems: Called function expects a reg128, which must not
     // alias with memory
     codegen::gen_read_reg_xmm128_into_scratch(ctx, r1);
@@ -6880,6 +6996,9 @@ pub fn instr_660F71_2_mem_jit(ctx: &mut JitContext, _modrm_byte: ModrmByte, _imm
     codegen::gen_trigger_ud(ctx);
 }
 pub fn instr_660F71_2_reg_jit(ctx: &mut JitContext, r: u32, imm8: u32) {
+    if simd_shift_imm(ctx, r, op::SIMD_I16X8SHRU, 16, imm8) {
+        return;
+    }
     ctx.builder.const_i32(r as i32);
     ctx.builder.const_i32(imm8 as i32);
     ctx.builder.call_fn2("instr_660F71_2_reg");
@@ -6888,6 +7007,9 @@ pub fn instr_660F71_4_mem_jit(ctx: &mut JitContext, _modrm_byte: ModrmByte, _imm
     codegen::gen_trigger_ud(ctx);
 }
 pub fn instr_660F71_4_reg_jit(ctx: &mut JitContext, r: u32, imm8: u32) {
+    if simd_shift_imm(ctx, r, op::SIMD_I16X8SHRS, 16, imm8) {
+        return;
+    }
     ctx.builder.const_i32(r as i32);
     ctx.builder.const_i32(imm8 as i32);
     ctx.builder.call_fn2("instr_660F71_4_reg");
@@ -6896,6 +7018,9 @@ pub fn instr_660F71_6_mem_jit(ctx: &mut JitContext, _modrm_byte: ModrmByte, _imm
     codegen::gen_trigger_ud(ctx);
 }
 pub fn instr_660F71_6_reg_jit(ctx: &mut JitContext, r: u32, imm8: u32) {
+    if simd_shift_imm(ctx, r, op::SIMD_I16X8SHL, 16, imm8) {
+        return;
+    }
     ctx.builder.const_i32(r as i32);
     ctx.builder.const_i32(imm8 as i32);
     ctx.builder.call_fn2("instr_660F71_6_reg");
@@ -6905,6 +7030,9 @@ pub fn instr_660F72_2_mem_jit(ctx: &mut JitContext, _modrm_byte: ModrmByte, _imm
     codegen::gen_trigger_ud(ctx);
 }
 pub fn instr_660F72_2_reg_jit(ctx: &mut JitContext, r: u32, imm8: u32) {
+    if simd_shift_imm(ctx, r, op::SIMD_I32X4SHRU, 32, imm8) {
+        return;
+    }
     ctx.builder.const_i32(r as i32);
     ctx.builder.const_i32(imm8 as i32);
     ctx.builder.call_fn2("instr_660F72_2_reg");
@@ -6913,6 +7041,9 @@ pub fn instr_660F72_4_mem_jit(ctx: &mut JitContext, _modrm_byte: ModrmByte, _imm
     codegen::gen_trigger_ud(ctx);
 }
 pub fn instr_660F72_4_reg_jit(ctx: &mut JitContext, r: u32, imm8: u32) {
+    if simd_shift_imm(ctx, r, op::SIMD_I32X4SHRS, 32, imm8) {
+        return;
+    }
     ctx.builder.const_i32(r as i32);
     ctx.builder.const_i32(imm8 as i32);
     ctx.builder.call_fn2("instr_660F72_4_reg");
@@ -6921,6 +7052,9 @@ pub fn instr_660F72_6_mem_jit(ctx: &mut JitContext, _modrm_byte: ModrmByte, _imm
     codegen::gen_trigger_ud(ctx);
 }
 pub fn instr_660F72_6_reg_jit(ctx: &mut JitContext, r: u32, imm8: u32) {
+    if simd_shift_imm(ctx, r, op::SIMD_I32X4SHL, 32, imm8) {
+        return;
+    }
     ctx.builder.const_i32(r as i32);
     ctx.builder.const_i32(imm8 as i32);
     ctx.builder.call_fn2("instr_660F72_6_reg");
@@ -6930,6 +7064,9 @@ pub fn instr_660F73_2_mem_jit(ctx: &mut JitContext, _modrm_byte: ModrmByte, _imm
     codegen::gen_trigger_ud(ctx);
 }
 pub fn instr_660F73_2_reg_jit(ctx: &mut JitContext, r: u32, imm8: u32) {
+    if simd_shift_imm(ctx, r, op::SIMD_I64X2SHRU, 64, imm8) {
+        return;
+    }
     ctx.builder.const_i32(r as i32);
     ctx.builder.const_i32(imm8 as i32);
     ctx.builder.call_fn2("instr_660F73_2_reg");
@@ -6938,6 +7075,9 @@ pub fn instr_660F73_3_mem_jit(ctx: &mut JitContext, _modrm_byte: ModrmByte, _imm
     codegen::gen_trigger_ud(ctx);
 }
 pub fn instr_660F73_3_reg_jit(ctx: &mut JitContext, r: u32, imm8: u32) {
+    if simd_shift_bytes(ctx, r, false, imm8) {
+        return;
+    }
     ctx.builder.const_i32(r as i32);
     ctx.builder.const_i32(imm8 as i32);
     ctx.builder.call_fn2("instr_660F73_3_reg");
@@ -6946,6 +7086,9 @@ pub fn instr_660F73_6_mem_jit(ctx: &mut JitContext, _modrm_byte: ModrmByte, _imm
     codegen::gen_trigger_ud(ctx);
 }
 pub fn instr_660F73_6_reg_jit(ctx: &mut JitContext, r: u32, imm8: u32) {
+    if simd_shift_imm(ctx, r, op::SIMD_I64X2SHL, 64, imm8) {
+        return;
+    }
     ctx.builder.const_i32(r as i32);
     ctx.builder.const_i32(imm8 as i32);
     ctx.builder.call_fn2("instr_660F73_6_reg");
@@ -6954,6 +7097,9 @@ pub fn instr_660F73_7_mem_jit(ctx: &mut JitContext, _modrm_byte: ModrmByte, _imm
     codegen::gen_trigger_ud(ctx);
 }
 pub fn instr_660F73_7_reg_jit(ctx: &mut JitContext, r: u32, imm8: u32) {
+    if simd_shift_bytes(ctx, r, true, imm8) {
+        return;
+    }
     ctx.builder.const_i32(r as i32);
     ctx.builder.const_i32(imm8 as i32);
     ctx.builder.call_fn2("instr_660F73_7_reg");
