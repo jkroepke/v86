@@ -396,7 +396,7 @@ build/capstone-x86.min.js:
 	mkdir -p build
 	wget -nv -P build https://github.com/AlexAltea/capstone.js/releases/download/v3.0.5-rc1/capstone-x86.min.js
 
-build/libwabt.cjs:
+build/libwabt.cjs: Makefile
 	mkdir -p build
 	wget -nv -O build/wabt.tgz https://registry.npmjs.org/wabt/-/wabt-1.0.39.tgz
 	tar xzf build/wabt.tgz -O package/index.js > build/libwabt.cjs
