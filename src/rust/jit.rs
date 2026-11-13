@@ -2887,6 +2887,7 @@ pub unsafe fn set_jit_config(index: u32, value: u32) {
         4 => JIT_THRESHOLD = value,
         5 => codegen::JIT_SIMD = value != 0,
         7 => JIT_COLD_BLOCKS = value != 0,
+        8 => codegen::JIT_BAIL = value != 0,
         _ => dbg_assert!(false),
     }
 }
@@ -2901,6 +2902,7 @@ pub unsafe fn get_jit_config(index: u32) -> u32 {
         4 => JIT_THRESHOLD,
         5 => codegen::JIT_SIMD as u32,
         7 => JIT_COLD_BLOCKS as u32,
+        8 => codegen::JIT_BAIL as u32,
         _ => 0,
     }
 }

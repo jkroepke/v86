@@ -350,6 +350,11 @@ pub static mut valid_tlb_entries_count: i32 = 0;
 
 pub static mut in_jit: bool = false;
 
+/// Set by JIT code that left its module at a memory access that missed the fast path
+/// (codegen::JIT_BAIL): the next cycle must run the interpreter, even when the instruction
+/// starts a compiled block, else the module would be entered and bail again.
+pub static mut jit_bailed: bool = false;
+
 pub enum JitExitReason {
     None,
     CpuException { code: i32, error_code: Option<i32> },
@@ -3412,7 +3417,7 @@ pub unsafe fn cycle_internal() {
         Some(c) => {
             let c = c.as_ref();
 
-            if initial_state_flags == c.state_flags {
+            if initial_state_flags == c.state_flags && !jit_bailed {
                 let state = c.state_table[initial_eip as usize & 0xFFF];
                 if state != u16::MAX {
                     jit_entry = Some((c.wasm_table_index.to_u16(), state));
@@ -3511,10 +3516,13 @@ pub unsafe fn cycle_internal() {
     }
     else {
         *previous_ip = initial_eip;
+        let bailed = jit_bailed;
+        jit_bailed = false;
         let phys_addr = return_on_pagefault!(get_phys_eip());
 
         match tlb_code[(initial_eip as u32 >> 12) as usize] {
             None => {},
+            Some(_) if bailed => {},
             Some(c) => {
                 let c = c.as_ref();
 
