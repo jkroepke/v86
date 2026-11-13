@@ -780,6 +780,42 @@ impl WasmBuilder {
         write_leb_u32(&mut self.instruction_body, byte_offset);
     }
 
+    /// A SIMD instruction without immediates (v128 in, v128 or i32 out)
+    pub fn simd_op(&mut self, opcode: u8) {
+        dbg_assert!(opcode < 0x80);
+        self.instruction_body.push(op::OP_SIMD_PREFIX);
+        self.instruction_body.push(opcode);
+    }
+    pub fn load_unaligned_v128(&mut self, byte_offset: u32) {
+        self.simd_op(op::SIMD_V128LOAD);
+        self.instruction_body.push(op::MEM_NO_ALIGN);
+        write_leb_u32(&mut self.instruction_body, byte_offset);
+    }
+    pub fn store_unaligned_v128(&mut self, byte_offset: u32) {
+        self.simd_op(op::SIMD_V128STORE);
+        self.instruction_body.push(op::MEM_NO_ALIGN);
+        write_leb_u32(&mut self.instruction_body, byte_offset);
+    }
+    pub fn load_aligned_v128(&mut self, byte_offset: u32) {
+        self.simd_op(op::SIMD_V128LOAD);
+        self.instruction_body.push(op::MEM_ALIGN128);
+        write_leb_u32(&mut self.instruction_body, byte_offset);
+    }
+    pub fn store_aligned_v128(&mut self, byte_offset: u32) {
+        self.simd_op(op::SIMD_V128STORE);
+        self.instruction_body.push(op::MEM_ALIGN128);
+        write_leb_u32(&mut self.instruction_body, byte_offset);
+    }
+    pub fn const_v128_zero(&mut self) {
+        self.simd_op(op::SIMD_V128CONST);
+        self.instruction_body.extend_from_slice(&[0; 16]);
+    }
+    /// Lanes 0-15 select from the first operand, 16-31 from the second
+    pub fn i8x16_shuffle(&mut self, lanes: &[u8; 16]) {
+        self.simd_op(op::SIMD_I8X16SHUFFLE);
+        self.instruction_body.extend_from_slice(lanes);
+    }
+
     pub fn increment_fixed_i64(&mut self, byte_offset: u32, n: i64) {
         self.const_i32(byte_offset as i32);
         self.load_fixed_i64(byte_offset);

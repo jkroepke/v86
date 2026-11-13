@@ -219,3 +219,22 @@ c!(MEM_NO_ALIGN, 0);
 c!(MEM_ALIGN16, 1);
 c!(MEM_ALIGN32, 2);
 c!(MEM_ALIGN64, 3);
+c!(MEM_ALIGN128, 4);
+
+// Fixed-width SIMD (simd128): the prefix, followed by the opcode as LEB128 u32
+// https://github.com/WebAssembly/simd/blob/main/proposals/simd/BinarySIMD.md
+c!(OP_SIMD_PREFIX, 0xfd);
+c!(SIMD_V128LOAD, 0x00);
+c!(SIMD_V128STORE, 0x0b);
+c!(SIMD_V128CONST, 0x0c);
+c!(SIMD_I8X16SHUFFLE, 0x0d);
+c!(SIMD_I8X16EQ, 0x23);
+c!(SIMD_I16X8EQ, 0x2d);
+c!(SIMD_I32X4EQ, 0x37);
+c!(SIMD_V128AND, 0x4e);
+c!(SIMD_V128ANDNOT, 0x4f);
+c!(SIMD_V128OR, 0x50);
+c!(SIMD_V128XOR, 0x51);
+c!(SIMD_I8X16BITMASK, 0x64);
+c!(SIMD_I8X16MINU, 0x77);
+c!(SIMD_I8X16MAXU, 0x79);

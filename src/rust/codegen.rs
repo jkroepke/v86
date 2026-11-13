@@ -309,7 +309,29 @@ pub fn decr_exc_asize(ctx: &mut JitContext) {
     }
 }
 
+// Emit WebAssembly SIMD (simd128) for some SSE2 instructions instead of calls into the
+// main module. Only the build of v86.wasm with simd128 does this: a browser without
+// SIMD loads v86-fallback.wasm, which is built without it and keeps the calls.
+// set_jit_config(5, 0) turns it off at runtime (for comparisons).
+pub static mut JIT_SIMD: bool = true;
+
+pub fn simd_enabled() -> bool { cfg!(target_feature = "simd128") && unsafe { JIT_SIMD } }
+
+/// Push the value of an xmm register as v128
+pub fn gen_get_reg_xmm_v128(ctx: &mut JitContext, r: u32) {
+    ctx.builder.const_i32(0);
+    ctx.builder
+        .load_aligned_v128(global_pointers::get_reg_xmm_offset(r));
+}
+
 pub fn gen_read_reg_xmm128_into_scratch(ctx: &mut JitContext, r: u32) {
+    if simd_enabled() {
+        ctx.builder.const_i32(0);
+        gen_get_reg_xmm_v128(ctx, r);
+        ctx.builder
+            .store_aligned_v128(global_pointers::sse_scratch_register as u32);
+        return;
+    }
     ctx.builder
         .const_i32(global_pointers::sse_scratch_register as i32);
     let dest = global_pointers::get_reg_xmm_offset(r);
@@ -762,15 +784,23 @@ fn gen_safe_read(
         BitSize::DQWORD => {
             let where_to_write = where_to_write.unwrap();
             let virt_address_local = ctx.builder.set_new_local();
-            ctx.builder.const_i32(0);
-            ctx.builder.get_local(&virt_address_local);
-            ctx.builder.load_unaligned_i64(0);
-            ctx.builder.store_unaligned_i64(where_to_write);
+            if simd_enabled() {
+                ctx.builder.const_i32(0);
+                ctx.builder.get_local(&virt_address_local);
+                ctx.builder.load_unaligned_v128(0);
+                ctx.builder.store_unaligned_v128(where_to_write);
+            }
+            else {
+                ctx.builder.const_i32(0);
+                ctx.builder.get_local(&virt_address_local);
+                ctx.builder.load_unaligned_i64(0);
+                ctx.builder.store_unaligned_i64(where_to_write);
 
-            ctx.builder.const_i32(0);
-            ctx.builder.get_local(&virt_address_local);
-            ctx.builder.load_unaligned_i64(8);
-            ctx.builder.store_unaligned_i64(where_to_write + 8);
+                ctx.builder.const_i32(0);
+                ctx.builder.get_local(&virt_address_local);
+                ctx.builder.load_unaligned_i64(8);
+                ctx.builder.store_unaligned_i64(where_to_write + 8);
+            }
 
             ctx.builder.free_local(virt_address_local);
         },

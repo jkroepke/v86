@@ -17,6 +17,7 @@ use crate::regs::{AX, BP, BX, CX, DI, DX, SI, SP};
 use crate::regs::{CS, DS, ES, FS, GS, SS};
 use crate::regs::{EAX, EBP, EBX, ECX, EDI, EDX, ESI, ESP};
 use crate::wasmgen::wasm_builder::{WasmBuilder, WasmLocal};
+use crate::wasmgen::wasm_opcodes as op;
 
 enum LocalOrImmediate<'a> {
     WasmLocal(&'a WasmLocal),
@@ -171,7 +172,104 @@ fn sse_read64_xmm_xmm(ctx: &mut JitContext, name: &str, r1: u32, r2: u32) {
     ctx.builder.call_fn2_i64_i32(name);
 }
 
+// SSE2 instructions on xmm registers that map to one WebAssembly SIMD instruction.
+// The operands are pushed as (destination, source).
+enum SimdOp {
+    Binary(u8),
+    // v128.andnot(a, b) is a & !b, pandn is !dst & src
+    Swapped(u8),
+    Shuffle([u8; 16]),
+}
+
+fn simd_op_of(name: &str) -> Option<SimdOp> {
+    if !codegen::simd_enabled() {
+        return None;
+    }
+    #[rustfmt::skip]
+    let op = match name {
+        "instr_660F74" => SimdOp::Binary(op::SIMD_I8X16EQ), // pcmpeqb
+        "instr_660F75" => SimdOp::Binary(op::SIMD_I16X8EQ), // pcmpeqw
+        "instr_660F76" => SimdOp::Binary(op::SIMD_I32X4EQ), // pcmpeqd
+        "instr_660FDA" => SimdOp::Binary(op::SIMD_I8X16MINU), // pminub
+        "instr_660FDE" => SimdOp::Binary(op::SIMD_I8X16MAXU), // pmaxub
+        "instr_660FDB" => SimdOp::Binary(op::SIMD_V128AND), // pand
+        "instr_660FDF" => SimdOp::Swapped(op::SIMD_V128ANDNOT), // pandn
+        "instr_660FEB" => SimdOp::Binary(op::SIMD_V128OR), // por
+        "instr_660FEF" => SimdOp::Binary(op::SIMD_V128XOR), // pxor
+        // punpckl*: interleave the low halves of destination (lanes 0-15) and source (16-31)
+        "instr_660F60" => SimdOp::Shuffle([0, 16, 1, 17, 2, 18, 3, 19, 4, 20, 5, 21, 6, 22, 7, 23]),
+        "instr_660F61" => SimdOp::Shuffle([0, 1, 16, 17, 2, 3, 18, 19, 4, 5, 20, 21, 6, 7, 22, 23]),
+        "instr_660F62" => SimdOp::Shuffle([0, 1, 2, 3, 16, 17, 18, 19, 4, 5, 6, 7, 20, 21, 22, 23]),
+        "instr_660F6C" => SimdOp::Shuffle([0, 1, 2, 3, 4, 5, 6, 7, 16, 17, 18, 19, 20, 21, 22, 23]),
+        // punpckh*: the same with the high halves
+        "instr_660F68" => SimdOp::Shuffle([8, 24, 9, 25, 10, 26, 11, 27, 12, 28, 13, 29, 14, 30, 15, 31]),
+        "instr_660F69" => SimdOp::Shuffle([8, 9, 24, 25, 10, 11, 26, 27, 12, 13, 28, 29, 14, 15, 30, 31]),
+        "instr_660F6A" => SimdOp::Shuffle([8, 9, 10, 11, 24, 25, 26, 27, 12, 13, 14, 15, 28, 29, 30, 31]),
+        "instr_660F6D" => SimdOp::Shuffle([8, 9, 10, 11, 12, 13, 14, 15, 24, 25, 26, 27, 28, 29, 30, 31]),
+        _ => return None,
+    };
+    Some(op)
+}
+
+/// Compute xmm register r = op(destination, source) and store it
+fn simd_apply(
+    ctx: &mut JitContext,
+    op: SimdOp,
+    dst: &dyn Fn(&mut JitContext),
+    src: &dyn Fn(&mut JitContext),
+    r: u32,
+) {
+    ctx.builder.const_i32(0);
+    match op {
+        SimdOp::Binary(o) => {
+            dst(ctx);
+            src(ctx);
+            ctx.builder.simd_op(o);
+        },
+        SimdOp::Swapped(o) => {
+            src(ctx);
+            dst(ctx);
+            ctx.builder.simd_op(o);
+        },
+        SimdOp::Shuffle(lanes) => {
+            dst(ctx);
+            src(ctx);
+            ctx.builder.i8x16_shuffle(&lanes);
+        },
+    }
+    ctx.builder
+        .store_aligned_v128(global_pointers::get_reg_xmm_offset(r));
+}
+
+fn simd_xmm_xmm(ctx: &mut JitContext, op: SimdOp, r1: u32, r2: u32) {
+    simd_apply(
+        ctx,
+        op,
+        &|ctx| codegen::gen_get_reg_xmm_v128(ctx, r2),
+        &|ctx| codegen::gen_get_reg_xmm_v128(ctx, r1),
+        r2,
+    );
+}
+
+fn simd_xmm_mem(ctx: &mut JitContext, op: SimdOp, modrm_byte: ModrmByte, r: u32) {
+    let scratch = global_pointers::sse_scratch_register as u32;
+    codegen::gen_modrm_resolve_safe_read128(ctx, modrm_byte, scratch);
+    simd_apply(
+        ctx,
+        op,
+        &|ctx| codegen::gen_get_reg_xmm_v128(ctx, r),
+        &|ctx| {
+            ctx.builder.const_i32(0);
+            ctx.builder.load_aligned_v128(scratch);
+        },
+        r,
+    );
+}
+
 fn sse_read128_xmm_mem(ctx: &mut JitContext, name: &str, modrm_byte: ModrmByte, r: u32) {
+    if let Some(op) = simd_op_of(name) {
+        return simd_xmm_mem(ctx, op, modrm_byte, r);
+    }
     let dest = global_pointers::sse_scratch_register as u32;
     codegen::gen_modrm_resolve_safe_read128(ctx, modrm_byte, dest);
     ctx.builder.const_i32(dest as i32);
@@ -193,6 +291,17 @@ fn sse_read128_xmm_mem_imm(
     ctx.builder.call_fn3(name);
 }
 fn sse_read128_xmm_xmm(ctx: &mut JitContext, name: &str, r1: u32, r2: u32) {
+    if let Some(op) = simd_op_of(name) {
+        if r1 == r2 && name == "instr_660FEF" {
+            // pxor x, x: the common way to zero a register
+            ctx.builder.const_i32(0);
+            ctx.builder.const_v128_zero();
+            ctx.builder
+                .store_aligned_v128(global_pointers::get_reg_xmm_offset(r2));
+            return;
+        }
+        return simd_xmm_xmm(ctx, op, r1, r2);
+    }
     // Make a copy to avoid aliasing problems: Called function expects a reg128, which must not
     // alias with memory
     codegen::gen_read_reg_xmm128_into_scratch(ctx, r1);
@@ -212,6 +321,13 @@ fn sse_read128_xmm_xmm_imm(ctx: &mut JitContext, name: &str, r1: u32, r2: u32, i
     ctx.builder.call_fn3(name);
 }
 fn sse_mov_xmm_xmm(ctx: &mut JitContext, r1: u32, r2: u32) {
+    if codegen::simd_enabled() {
+        ctx.builder.const_i32(0);
+        codegen::gen_get_reg_xmm_v128(ctx, r1);
+        ctx.builder
+            .store_aligned_v128(global_pointers::get_reg_xmm_offset(r2));
+        return;
+    }
     ctx.builder
         .const_i32(global_pointers::get_reg_xmm_offset(r2) as i32);
     ctx.builder
@@ -6549,9 +6665,27 @@ pub fn instr_0F70_reg_jit(ctx: &mut JitContext, r1: u32, r2: u32, imm8: u32) {
     ctx.builder.const_i32(imm8 as i32);
     ctx.builder.call_fn3_i64_i32_i32("instr_0F70");
 }
+/// pshufd: dword i of the result is dword (imm8 >> 2 * i & 3) of the source
+fn pshufd_lanes(imm8: u32) -> [u8; 16] {
+    let mut lanes = [0; 16];
+    for i in 0..16 {
+        lanes[i] = (4 * (imm8 >> 2 * (i / 4) & 3) + (i as u32 & 3)) as u8;
+    }
+    lanes
+}
 pub fn instr_660F70_mem_jit(ctx: &mut JitContext, modrm_byte: ModrmByte, r: u32, imm8: u32) {
     let src = global_pointers::sse_scratch_register as u32;
     codegen::gen_modrm_resolve_safe_read128(ctx, modrm_byte, src);
+    if codegen::simd_enabled() {
+        ctx.builder.const_i32(0);
+        ctx.builder.const_i32(0);
+        ctx.builder.load_aligned_v128(src);
+        ctx.builder.const_v128_zero();
+        ctx.builder.i8x16_shuffle(&pshufd_lanes(imm8));
+        ctx.builder
+            .store_aligned_v128(global_pointers::get_reg_xmm_offset(r));
+        return;
+    }
     for i in 0..4 {
         ctx.builder.const_i32(0);
         ctx.builder.load_fixed_i32(src + 4 * (imm8 >> 2 * i & 3));
@@ -6560,6 +6694,15 @@ pub fn instr_660F70_mem_jit(ctx: &mut JitContext, modrm_byte: ModrmByte, r: u32,
     }
 }
 pub fn instr_660F70_reg_jit(ctx: &mut JitContext, r1: u32, r2: u32, imm8: u32) {
+    if codegen::simd_enabled() {
+        ctx.builder.const_i32(0);
+        codegen::gen_get_reg_xmm_v128(ctx, r1);
+        ctx.builder.const_v128_zero();
+        ctx.builder.i8x16_shuffle(&pshufd_lanes(imm8));
+        ctx.builder
+            .store_aligned_v128(global_pointers::get_reg_xmm_offset(r2));
+        return;
+    }
     codegen::gen_read_reg_xmm128_into_scratch(ctx, r1);
     // TODO: perf: copy less (handle aliased src/dst), use 64-bit loads/stores if possible
     let src = global_pointers::sse_scratch_register as u32;
@@ -7359,6 +7502,13 @@ pub fn instr_660FD7_mem_jit(ctx: &mut JitContext, _modrm_byte: ModrmByte, _r: u3
     codegen::gen_trigger_ud(ctx)
 }
 pub fn instr_660FD7_reg_jit(ctx: &mut JitContext, r1: u32, r2: u32) {
+    if codegen::simd_enabled() {
+        // pmovmskb: the top bit of each byte
+        codegen::gen_get_reg_xmm_v128(ctx, r1);
+        ctx.builder.simd_op(op::SIMD_I8X16BITMASK);
+        codegen::gen_set_reg32(ctx, r2);
+        return;
+    }
     ctx.builder.const_i32(r1 as i32);
     ctx.builder.call_fn1_ret("instr_660FD7");
     codegen::gen_set_reg32(ctx, r2);

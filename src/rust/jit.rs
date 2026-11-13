@@ -2511,6 +2511,7 @@ pub unsafe fn set_jit_config(index: u32, value: u32) {
         2 => JIT_USE_LOOP_SAFETY = value != 0,
         3 => MAX_EXTRA_BASIC_BLOCKS = value,
         4 => JIT_THRESHOLD = value,
+        5 => codegen::JIT_SIMD = value != 0,
         _ => dbg_assert!(false),
     }
 }
@@ -2523,6 +2524,7 @@ pub unsafe fn get_jit_config(index: u32) -> u32 {
         2 => JIT_USE_LOOP_SAFETY as u32,
         3 => MAX_EXTRA_BASIC_BLOCKS as u32,
         4 => JIT_THRESHOLD,
+        5 => codegen::JIT_SIMD as u32,
         _ => 0,
     }
 }
