@@ -86,17 +86,18 @@ fn known_entry_point_index(phys_address: u32) -> usize {
 // - v8 poorly handles large br_table elements and OOMs on modules much smaller than the above limit
 //   See https://bugs.chromium.org/p/v8/issues/detail?id=9697 and https://bugs.chromium.org/p/v8/issues/detail?id=9141
 //   Will hopefully be fixed in the near future by generating direct control flow
-static mut MAX_PAGES: u32 = 3;
+// - The cost of compiling a module grows faster than its size: V8's optimizing compiler
+//   (TurboFan), which compiles nearly every module after a while (dynamic tiering), needs
+//   ~0.7 us per byte for a 17 KB function and ~2.5 us per byte for a 170 KB one. Modules of
+//   one page made the CPU time of all threads 25-35 % smaller (spring, nginx, cpu, goapp in
+//   Node.js; cpu in Chrome), with the same or less time on the main thread.
+static mut MAX_PAGES: u32 = 1;
 
 static mut JIT_USE_LOOP_SAFETY: bool = true;
 
 pub static mut MAX_EXTRA_BASIC_BLOCKS: u32 = 250;
 
 pub static mut JIT_THRESHOLD: u32 = 200 * 1000;
-
-// A page that was compiled or written before needs JIT_THRESHOLD << min(n, RECOMPILE_BACKOFF)
-// hotness for its next module, where n counts its modules and its invalidations. 0: off.
-pub static mut RECOMPILE_BACKOFF: u32 = 0;
 
 // less branches will generate if-else, more will generate brtable
 pub const BRTABLE_CUTOFF: usize = 10;
@@ -161,8 +162,6 @@ struct JitState {
     pages: HashMap<Page, PageInfo>,
     wasm_table_index_free_list: Vec<WasmTableIndex>,
     compiling: Option<(WasmTableIndex, CompilingPageState)>,
-    // modules and invalidations per page (for RECOMPILE_BACKOFF), kept when a page is written
-    page_history: HashMap<Page, u8>,
     #[cfg(debug_assertions)]
     wasm_table_index_to_page: HashMap<WasmTableIndex, HashSet<Page>>,
 }
@@ -250,7 +249,6 @@ impl JitState {
 
             wasm_table_index_free_list: Vec::from_iter(wasm_table_indices),
             compiling: None,
-            page_history: HashMap::default(),
 
             #[cfg(debug_assertions)]
             wasm_table_index_to_page: HashMap::default(),
@@ -1070,11 +1068,12 @@ fn jit_analyze_and_generate(
     if ctx.wasm_table_index_free_list.is_empty() {
         dbg_log!("wasm_table_index_free_list empty, clearing cache");
 
-        // When no free slots are available, delete all cached modules. We could increase the
-        // size of the table, but this way the initial size acts as an upper bound for the
-        // number of wasm modules that we generate, which we want anyway to avoid getting our
-        // tab killed by browsers due to memory constraints.
-        jit_clear_cache(ctx);
+        // When no free slots are available, delete the modules that were entered least since
+        // the last time (at least half of them). We could increase the size of the table, but
+        // this way the initial size acts as an upper bound for the number of wasm modules that
+        // we generate, which we want anyway to avoid getting our tab killed by browsers due to
+        // memory constraints.
+        jit_evict_cold_modules(ctx);
 
         profiler::stat_increment(stat::INVALIDATE_ALL_MODULES_NO_FREE_WASM_INDICES);
 
@@ -1134,9 +1133,6 @@ fn jit_analyze_and_generate(
         ctx.wasm_builder.get_output_len() as u64,
     );
     profiler::stat_increment_by(stat::COMPILE_PAGE, pages.len() as u64);
-    for &p in &pages {
-        reset_hotness(ctx, p);
-    }
     if cfg!(feature = "profiler") {
         let ps: Vec<u32> = pages.iter().map(|p| p.to_u32()).collect();
         profiler::module_compiled(
@@ -2311,9 +2307,9 @@ pub fn jit_increase_hotness_and_maybe_compile(
         }
     }
 
-    let new_hotness = unsafe { *hotness }.wrapping_add(heat);
+    let new_hotness = unsafe { *hotness } + heat;
     unsafe { *hotness = new_hotness };
-    if new_hotness as i32 >= unsafe { JIT_THRESHOLD } as i32 {
+    if new_hotness >= unsafe { JIT_THRESHOLD } {
         let mut ctx = get_jit_state();
         if ctx.compiling.is_some() {
             return;
@@ -2327,20 +2323,6 @@ pub fn jit_increase_hotness_and_maybe_compile(
             profiler::stat_increment(stat::COMPILE_WRONG_ADDRESS_SPACE);
         }
     }
-}
-
-/// Count a module or an invalidation of the page and set its hotness to where it starts again
-fn reset_hotness(ctx: &mut JitState, page: Page) {
-    let backoff = unsafe { RECOMPILE_BACKOFF };
-    let mut start = 0u32;
-    if backoff != 0 {
-        let n = ctx.page_history.entry(page).or_insert(0);
-        let shift = (*n as u32).min(backoff).min(8);
-        *n = n.saturating_add(1);
-        // negative (as i32): the page needs more heat than JIT_THRESHOLD
-        start = 0u32.wrapping_sub(unsafe { JIT_THRESHOLD }.wrapping_mul((1 << shift) - 1));
-    }
-    unsafe { PAGE_HOTNESS[page.to_u32() as usize] = start };
 }
 
 fn free_wasm_table_index(ctx: &mut JitState, wasm_table_index: WasmTableIndex) {
@@ -2466,12 +2448,6 @@ fn jit_dirty_page_ctx(ctx: &mut JitState, page: Page) {
         Some(entry_points) => {
             unsafe {
                 PAGE_HOTNESS[page.to_u32() as usize] = 0;
-            }
-            if did_have_code {
-                // the page had a module: count the invalidation
-                reset_hotness(ctx, page);
-            }
-            unsafe {
                 for addr_low in entry_points {
                     let addr = page.to_address() | addr_low as u32;
                     let known = &mut KNOWN_ENTRY_POINTS[known_entry_point_index(addr)];
@@ -2547,6 +2523,50 @@ pub fn jit_dirty_cache_small(start_addr: u32, end_addr: u32) {
     }
 }
 
+// Entries into each module from the main loop since the last eviction
+pub static mut MODULE_USE: [u32; WASM_TABLE_SIZE as usize] = [0; WASM_TABLE_SIZE as usize];
+
+#[inline(always)]
+pub fn module_used(wasm_table_index: u16) {
+    unsafe {
+        let u = &mut MODULE_USE[wasm_table_index as usize];
+        *u = u.saturating_add(1);
+    }
+}
+
+fn jit_evict_cold_modules(ctx: &mut JitState) {
+    let mut uses: Vec<(u32, u16)> = ctx
+        .pages
+        .values()
+        .map(|i| {
+            let w = i.wasm_table_index.to_u16();
+            (unsafe { MODULE_USE[w as usize] }, w)
+        })
+        .collect();
+    uses.sort_unstable();
+    uses.dedup();
+    let limit = match uses.get(uses.len() / 2) {
+        Some(&(u, _)) => u,
+        None => 0,
+    };
+    let evict: Vec<Page> = ctx
+        .pages
+        .iter()
+        .filter(|(_, i)| unsafe { MODULE_USE[i.wasm_table_index.to_u16() as usize] } <= limit)
+        .map(|(&p, _)| p)
+        .collect();
+    for page in evict {
+        jit_dirty_page_ctx(ctx, page);
+    }
+    unsafe {
+        #[allow(static_mut_refs)]
+        MODULE_USE.fill(0);
+    }
+    if ctx.wasm_table_index_free_list.is_empty() {
+        jit_clear_cache(ctx);
+    }
+}
+
 #[no_mangle]
 pub fn jit_clear_cache_js() { jit_clear_cache(&mut get_jit_state()) }
 
@@ -2560,13 +2580,9 @@ fn jit_clear_cache(ctx: &mut JitState) {
         pages_with_code.insert(p);
     }
 
-    // not a write by the guest: keep the history of the pages as it is
-    let backoff = unsafe { RECOMPILE_BACKOFF };
-    unsafe { RECOMPILE_BACKOFF = 0 };
     for page in pages_with_code {
         jit_dirty_page_ctx(ctx, page);
     }
-    unsafe { RECOMPILE_BACKOFF = backoff };
 }
 
 pub fn jit_page_has_code(page: Page) -> bool { jit_page_has_code_ctx(&mut get_jit_state(), page) }
@@ -2687,7 +2703,6 @@ pub unsafe fn set_jit_config(index: u32, value: u32) {
         3 => MAX_EXTRA_BASIC_BLOCKS = value,
         4 => JIT_THRESHOLD = value,
         5 => codegen::JIT_SIMD = value != 0,
-        6 => RECOMPILE_BACKOFF = value,
         _ => dbg_assert!(false),
     }
 }
@@ -2701,7 +2716,6 @@ pub unsafe fn get_jit_config(index: u32) -> u32 {
         3 => MAX_EXTRA_BASIC_BLOCKS as u32,
         4 => JIT_THRESHOLD,
         5 => codegen::JIT_SIMD as u32,
-        6 => RECOMPILE_BACKOFF,
         _ => 0,
     }
 }

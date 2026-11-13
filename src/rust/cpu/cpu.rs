@@ -3442,6 +3442,7 @@ pub unsafe fn cycle_internal() {
         }
         profiler::stat_increment(stat::RUN_FROM_CACHE);
         profiler::module_entered(wasm_table_index);
+        jit::module_used(wasm_table_index);
         let initial_instruction_counter = *instruction_counter;
         #[cfg(debug_assertions)]
         {
