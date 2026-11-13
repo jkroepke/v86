@@ -33,16 +33,24 @@
   spring is TurboFan compiling JIT modules (background threads).
 - spring cpu s, run d (alternated): m2 136.5 149.0 120.2; c4 159.3 152.1.
 
-## Current step
-- spring A/B running (chain2/run.sh tag b, results in chain2/results.txt): m2 vs c4 7=0 vs c3 7=0, 2x.
-- c4 state: all-debug, rust-test, nasmtests 15600/15600, nasmtests-force-jit 15600/15600 pass.
-- callgrind (icg.sh, xm, 7=0): generated code Ir c3 9460M -> c4 8301M (-12 %), all of node 25.0G -> 23.5G.
-- spring under load ~20 (wall 430-510 s): m2 131.0/130.2 s cpu, c3 132.2; first c4 run hit the 600 s
-  http timeout (raised to 1500 s in core.mjs, HTTP_TIMEOUT env). Profiler run of c4 spring: scratchpad
-  stats-spring-c4.txt (bench/v86-c4-prof, statnames in scratchpad/statnames-c4.json).
+- spring cpu s, run d last pair (load ~10): m2 120.2, c4 122.2. All spring runs: m2 131.0 130.2
+  136.5 149.0 120.2 (median 131.0); c4 148.9 159.3 152.1 122.2.
+- cpu workload, 3x3 rounds alternated (load ~12), cpu ms medians: m2 7330, c4 chaining on 6565,
+  c4 chaining off (6=0) 6540. => chaining itself gives nothing on cpu either.
 
-## Next
-- nginx, spring (1 round per variant, 2-3x), nasm tests with chaining on, then decide what to keep.
+## Decision (2026-11-13)
+- Not merged to master: chaining (shared stub, direct exits, registers as arguments) shows a gain
+  only in the micro bench (xm 3860 -> ~3300 ms cpu, callgrind -6 % host instructions), none on
+  spring or cpu, and it adds +4.6 % TurboFan compile work on spring. Branch stays as wip/chain.
+
+## Open ideas
+- Spring is bound by TurboFan compiling JIT modules (56 % of all CPU of the process, background
+  threads). Smaller generated code per module or fewer recompiles (invalidation of JVM code
+  pages) should pay more than faster transitions.
+- Fewer transitions instead of cheaper ones: speculate (7) includes more pages, but it costs
+  compile time; it was slower on spring (134 s vs 116 s).
+- If chaining is picked up again: measure on a quiet machine; the spring cpu time follows the
+  machine load (120-160 s for the same build).
 
 ## Old numbers (previous agent, before rebase, noisy)
 - spring base ~131-140 s wall / 101-104 s cpu; chain1 162 s / 107 s (one run). Profiler: CYCLE_INTERNAL 542M -> 100M, CHAIN 447M.
