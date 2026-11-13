@@ -68,9 +68,29 @@ time goes.
 
 ## Where the time goes (measured 2026-11-13)
 
-- nginx start: 53M guest instructions, 75 % interpreted. The JIT threshold
-  (200k instructions per page) is rarely reached; lower thresholds were
-  slower (compile cost).
+- nginx start: 51M guest instructions, 82 % interpreted (75 % with the old
+  JIT threshold of 200k). Profile of the main thread: interpreter::run
+  45 %, JIT code 9 %, modrm_resolve_packed 7 %, main_loop 7 %; goapp: 40 %,
+  18 %, 8 %, 7 %. The interpreter decodes every instruction again: ~120 host
+  instructions per guest instruction (callgrind), ~90 Mips also for hot
+  loops (cpu with the JIT off). The profile inside `run` is flat. What paid
+  was to take loads and branches out of the loop over the instructions;
+  what did not: a displacement without branches in the modrm fast path
+  (+2 % host instructions), the modrm fast path as a function without calls
+  for flat segments (-0.8 %, +13 KB of wasm).
+- Background CPU: V8 compiles every JIT module twice, first with Liftoff,
+  then the hot ones with TurboFan on background threads (~40 ms per page
+  module). With the threshold of 200k that was 2 s per nginx start and 6.8 s
+  per goapp start, more than the main thread used, for code that hardly
+  ran. `PCPU=1` of pod-bench shows it; the CPU time of the main thread does
+  not.
+- v86.wasm itself: V8 optimises its hot functions per process (~0.3 s of
+  background CPU, the interpreter is one function of 72 KB) and shares the
+  code between workers only while a module of the same bytes is alive. A
+  pod that starts alone runs Liftoff code first (the interpreter is ~1.6x
+  slower). An embedder should compile v86.wasm once, keep the
+  `WebAssembly.Module` and pass it to every worker (`wasm_fn`); pod-bench
+  does not show this, its rounds share the module.
 - spring: ~9G instructions; 486M entries into JIT modules with only ~16
   instructions each, 473M exits to another page. Profile: 55 % JIT code,
   15 % main_loop (dispatch into modules), 15 % interpreter.
@@ -168,5 +188,26 @@ time goes.
   cpu and nginx -25 %; main thread the same or faster; peak RSS of spring
   1108 -> 770 MiB. Profiler counters for compiled, recompiled and cold
   code (`profiler_flush()` before reading them).
+- Interpreter loop (2026-11-13): the loop keeps the operand size bit of the
+  opcode (it changes only at the end of a block) and makes one comparison
+  per instruction for "the block has ended" and "the next instruction is in
+  another page" (`interpreter_page` in `cpu.rs`). Whatever changes the
+  translation of the code page ends the block (`invalidate_eip_translation`,
+  a fetch across the end of the page), so the loop does not check
+  `last_virt_eip` either. Host instructions per guest instruction (callgrind,
+  nginx, JIT off): 134.4 -> 118.0. CPU of the main thread with the JIT off:
+  nginx -8 %, goapp -7.5 % (paired runs). v86.wasm 2069938 -> 2063864 bytes.
+- JIT threshold 200k -> 750k instructions per page (`JIT_THRESHOLD`,
+  `set_jit_config(4, n)`). Measured with 500k, 750k and 1M: the CPU of the
+  main thread is flat or better up to 1M, the CPU of the process falls
+  (fewer modules for V8 to compile: nginx 45-52 -> 11, goapp 155 -> 49).
+  Together with the interpreter loop, main thread / process / wall time per
+  start (medians of 3 x 4-6 rounds on a busy machine): nginx 770 / 2830 /
+  1050 ms -> 710 / 1090 / 820 ms, goapp 2060 / 8840 / 2950 ms -> 1950 / 3070
+  / 2070 ms; cpu 5860 / 10420 ms -> 5980 / 9230 ms, glibc 5870 / 15200 ms ->
+  5730 / 11850 ms. spring (one round each): 87.4 / 161.5 s -> 84.6 /
+  137.2 s. In headless Chromium nginx answers after 0.79 s instead of
+  1.39 s. If modules get cheaper to compile, measure the threshold again.
+
 
 Work in progress lives on `wip/*` and `codex/*` branches.
