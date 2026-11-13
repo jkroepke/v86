@@ -17,6 +17,14 @@
   cpu.rs passes reg32). Build v86-c4. xm (7=0, 3x3 rounds alternated, cpu ms): c3 3580/3840/3820,
   c4 3290/3100/3710; xs c3 1370, c4 1170. nginx/cpu/goapp run fine.
 
+- Profiler spring c4 7=0: RUN_FROM_CACHE 47M, CHAIN 310M, CHAIN_DIRECT 226M (miss 5M), CHAIN_NO_ENTRY 28M,
+  INDIRECT_JUMP_NO_ENTRY 338M, CYCLE_INTERNAL 109M (was 542M without chaining). So nearly all
+  transitions are chained, yet spring cpu does not drop.
+- spring cpu s (load ~20, one round each, alternated): m2 131.0 130.2 136.5 149.0; c3 132.2 168.8;
+  c4 148.9 159.3. c4 looks worse on spring (?), better on xm. cpu workload (6 rounds alternated):
+  medians m2 ~7850, c3 ~7315, c4 ~7345 ms.
+- callgrind of nginx does not finish under this load (no http in 1500 s); icg.sh round parsing broken.
+
 ## Current step
 - spring A/B running (chain2/run.sh tag b, results in chain2/results.txt): m2 vs c4 7=0 vs c3 7=0, 2x.
 - c4 state: all-debug, rust-test, nasmtests 15600/15600, nasmtests-force-jit 15600/15600 pass.
