@@ -1,4 +1,5 @@
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, VecDeque};
+use crate::hash::{HashMap, HashSet};
 use std::iter::FromIterator;
 use std::mem::{self, MaybeUninit};
 use std::ops::{Deref, DerefMut};
@@ -73,7 +74,7 @@ static mut JIT_USE_LOOP_SAFETY: bool = true;
 
 pub static mut MAX_EXTRA_BASIC_BLOCKS: u32 = 250;
 
-pub const JIT_THRESHOLD: u32 = 200 * 1000;
+pub static mut JIT_THRESHOLD: u32 = 200 * 1000;
 
 // less branches will generate if-else, more will generate brtable
 pub const BRTABLE_CUTOFF: usize = 10;
@@ -219,14 +220,14 @@ impl JitState {
         JitState {
             wasm_builder: WasmBuilder::new(),
 
-            entry_points: HashMap::new(),
-            pages: HashMap::new(),
+            entry_points: HashMap::default(),
+            pages: HashMap::default(),
 
             wasm_table_index_free_list: Vec::from_iter(wasm_table_indices),
             compiling: None,
 
             #[cfg(debug_assertions)]
-            wasm_table_index_to_page: HashMap::new(),
+            wasm_table_index_to_page: HashMap::default(),
         }
     }
 }
@@ -467,7 +468,7 @@ fn jit_find_basic_blocks(
                     Some(PageInfo { entry_points, .. }) => {
                         HashSet::from_iter(entry_points.iter().map(|x| x.0))
                     },
-                    None => HashSet::new(),
+                    None => HashSet::default(),
                 };
 
                 if entry_points
@@ -508,10 +509,10 @@ fn jit_find_basic_blocks(
     }
 
     let mut to_visit_stack: Vec<i32> = Vec::new();
-    let mut marked_as_entry: HashSet<i32> = HashSet::new();
+    let mut marked_as_entry: HashSet<i32> = HashSet::default();
     let mut basic_blocks: BTreeMap<u32, BasicBlock> = BTreeMap::new();
-    let mut pages: HashSet<Page> = HashSet::new();
-    let mut page_blacklist = HashSet::new();
+    let mut pages: HashSet<Page> = HashSet::default();
+    let mut page_blacklist = HashSet::default();
 
     // 16-bit doesn't work correctly, most likely due to instruction pointer wrap-around
     let max_pages = if cpu.state_flags.is_32() { unsafe { MAX_PAGES } } else { 1 };
@@ -831,7 +832,7 @@ pub fn jit_force_generate_unsafe(virt_addr: i32) {
         cpu::translate_address_read(virt_addr).unwrap(),
         cpu::get_seg_cs() as u32,
         cpu::get_state_flags(),
-        JIT_THRESHOLD,
+        unsafe { JIT_THRESHOLD },
     );
     dbg_assert!(get_jit_state().compiling.is_some());
 }
@@ -855,7 +856,7 @@ fn jit_analyze_and_generate(
 
     let existing_entry_points = match ctx.pages.get(&page) {
         Some(PageInfo { entry_points, .. }) => HashSet::from_iter(entry_points.iter().map(|x| x.0)),
-        None => HashSet::new(),
+        None => HashSet::default(),
     };
 
     if entry_points
@@ -896,7 +897,7 @@ fn jit_analyze_and_generate(
         .collect();
     let basic_blocks = jit_find_basic_blocks(ctx, entry_points, cpu.clone());
 
-    let mut pages = HashSet::new();
+    let mut pages = HashSet::default();
 
     for b in basic_blocks.iter() {
         // Remove this assertion once page-crossing jit is enabled
@@ -1025,7 +1026,7 @@ fn jit_analyze_and_generate(
     );
     dbg_assert!(!entries.is_empty());
 
-    let mut page_info = HashMap::new();
+    let mut page_info = HashMap::default();
     for &p in &pages {
         page_info.entry(p).or_insert_with(|| PageInfo {
             wasm_table_index,
@@ -1035,7 +1036,7 @@ fn jit_analyze_and_generate(
         });
         ctx.entry_points
             .entry(p)
-            .or_insert_with(|| (0, HashSet::new()));
+            .or_insert_with(|| (0, HashSet::default()));
     }
     for &(addr, state) in &entries {
         let code = page_info.get_mut(&Page::page_of(addr)).unwrap();
@@ -1113,7 +1114,7 @@ pub fn codegen_finalize_finished(
             .insert(wasm_table_index, pages.keys().copied().collect());
     }
 
-    let mut check_for_unused_wasm_table_index = HashSet::new();
+    let mut check_for_unused_wasm_table_index = HashSet::default();
 
     for (page, mut info) in pages {
         dbg_assert!(info.state_flags == state_flags);
@@ -1286,7 +1287,7 @@ fn jit_generate_module(
         result
     };
 
-    let mut index_for_addr = HashMap::new();
+    let mut index_for_addr = HashMap::default();
     for (i, &addr) in entry_blocks.iter().enumerate() {
         dbg_assert!(i < 0x10000);
         index_for_addr.insert(addr, i as u16);
@@ -1299,7 +1300,7 @@ fn jit_generate_module(
         }
     }
 
-    let mut label_for_addr: HashMap<u32, (Label, Option<u16>)> = HashMap::new();
+    let mut label_for_addr: HashMap<u32, (Label, Option<u16>)> = HashMap::default();
 
     enum Work {
         WasmStructure(WasmStructure),
@@ -1876,7 +1877,7 @@ fn jit_generate_module(
                     codegen::gen_profiler_stat_increment(ctx.builder, stat::DISPATCHER_SMALL);
                     let nexts: HashSet<u32> = next_addr
                         .as_ref()
-                        .map_or(HashSet::new(), |nexts| nexts.iter().copied().collect());
+                        .map_or(HashSet::default(), |nexts| nexts.iter().copied().collect());
                     for &addr in &entries {
                         if nexts.contains(&addr) {
                             continue;
@@ -1918,7 +1919,7 @@ fn jit_generate_module(
                     }
                 }
 
-                let mut olds = HashMap::new();
+                let mut olds = HashMap::default();
                 for &target in entries.iter() {
                     let index = if entries.len() == 1 {
                         None
@@ -1962,7 +1963,7 @@ fn jit_generate_module(
 
                 let targets = next_addr.clone().unwrap();
                 let label = ctx.builder.block_void();
-                let mut olds = HashMap::new();
+                let mut olds = HashMap::default();
                 for &target in targets.iter() {
                     let index = if targets.len() == 1 {
                         None
@@ -2167,7 +2168,7 @@ pub fn jit_increase_hotness_and_maybe_compile(
     let (hotness, entry_points) = ctx.entry_points.entry(page).or_insert_with(|| {
         cpu::tlb_set_has_code(page, true);
         profiler::stat_increment(stat::RUN_INTERPRETED_NEW_PAGE);
-        (0, HashSet::new())
+        (0, HashSet::default())
     });
 
     if !is_near_end_of_page(phys_address) {
@@ -2175,7 +2176,7 @@ pub fn jit_increase_hotness_and_maybe_compile(
     }
 
     *hotness += heat;
-    if *hotness >= JIT_THRESHOLD {
+    if *hotness >= unsafe { JIT_THRESHOLD } {
         if is_compiling {
             return;
         }
@@ -2380,7 +2381,7 @@ pub fn jit_dirty_cache_small(start_addr: u32, end_addr: u32) {
 pub fn jit_clear_cache_js() { jit_clear_cache(&mut get_jit_state()) }
 
 fn jit_clear_cache(ctx: &mut JitState) {
-    let mut pages_with_code = HashSet::new();
+    let mut pages_with_code = HashSet::default();
 
     for &p in ctx.entry_points.keys() {
         pages_with_code.insert(p);
@@ -2509,6 +2510,7 @@ pub unsafe fn set_jit_config(index: u32, value: u32) {
         1 => MAX_PAGES = value,
         2 => JIT_USE_LOOP_SAFETY = value != 0,
         3 => MAX_EXTRA_BASIC_BLOCKS = value,
+        4 => JIT_THRESHOLD = value,
         _ => dbg_assert!(false),
     }
 }
@@ -2520,6 +2522,7 @@ pub unsafe fn get_jit_config(index: u32) -> u32 {
         1 => MAX_PAGES as u32,
         2 => JIT_USE_LOOP_SAFETY as u32,
         3 => MAX_EXTRA_BASIC_BLOCKS as u32,
+        4 => JIT_THRESHOLD,
         _ => 0,
     }
 }
