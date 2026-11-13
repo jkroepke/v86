@@ -138,6 +138,13 @@ fn three_byte_jit(ctx: &mut JitContext, instr_flags: &mut u32, op: Option<Op>) {
                 let imm = ctx.cpu.read_imm8() as u32;
                 sse_read128_xmm_mem_imm(ctx, name, addr, r2, imm)
             },
+            Op::R32Imm(_, name) => {
+                let imm = ctx.cpu.read_imm8() as u32;
+                codegen::gen_modrm_resolve_safe_read32(ctx, addr);
+                ctx.builder.const_i32(r2 as i32);
+                ctx.builder.const_i32(imm as i32);
+                ctx.builder.call_fn3(name)
+            },
             Op::MmxImm(_, name) => {
                 let imm = ctx.cpu.read_imm8() as u32;
                 codegen::gen_modrm_resolve_safe_read64(ctx, addr);
@@ -154,6 +161,13 @@ fn three_byte_jit(ctx: &mut JitContext, instr_flags: &mut u32, op: Option<Op>) {
             Op::XmmImm(_, name) => {
                 let imm = ctx.cpu.read_imm8() as u32;
                 sse_read128_xmm_xmm_imm(ctx, name, r1, r2, imm)
+            },
+            Op::R32Imm(_, name) => {
+                let imm = ctx.cpu.read_imm8() as u32;
+                codegen::gen_get_reg32(ctx, r1);
+                ctx.builder.const_i32(r2 as i32);
+                ctx.builder.const_i32(imm as i32);
+                ctx.builder.call_fn3(name)
             },
             Op::MmxImm(_, name) => {
                 let imm = ctx.cpu.read_imm8() as u32;

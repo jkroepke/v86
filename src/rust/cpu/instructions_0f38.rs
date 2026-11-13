@@ -21,6 +21,8 @@ pub enum Op {
     // the same with an immediate byte
     XmmImm(unsafe fn(reg128, i32, i32), &'static str),
     MmxImm(unsafe fn(u64, i32, i32), &'static str),
+    // fn(source: r/m32, destination xmm register, immediate byte)
+    R32Imm(unsafe fn(i32, i32, i32), &'static str),
 }
 
 macro_rules! xmm {
@@ -55,6 +57,11 @@ pub fn find_0f38(opcode: u8, prefixes_: u8) -> Option<Op> {
             0x1C => xmm!(instr_660F381C),
             0x1D => xmm!(instr_660F381D),
             0x1E => xmm!(instr_660F381E),
+            0xDB => xmm!(instr_660F38DB),
+            0xDC => xmm!(instr_660F38DC),
+            0xDD => xmm!(instr_660F38DD),
+            0xDE => xmm!(instr_660F38DE),
+            0xDF => xmm!(instr_660F38DF),
             _ => None,
         }
     }
@@ -93,6 +100,9 @@ pub fn find_0f3a(opcode: u8, prefixes_: u8) -> Option<Op> {
     if prefixes_ & PREFIX_66 != 0 {
         match opcode {
             0x0F => Some(Op::XmmImm(instr_660F3A0F, "instr_660F3A0F")),
+            0x22 => Some(Op::R32Imm(instr_660F3A22, "instr_660F3A22")),
+            0x44 => Some(Op::XmmImm(instr_660F3A44, "instr_660F3A44")),
+            0xDF => Some(Op::XmmImm(instr_660F3ADF, "instr_660F3ADF")),
             _ => None,
         }
     }
@@ -138,6 +148,18 @@ unsafe fn run(op: Option<Op>) {
             }
             else {
                 read_xmm128s(modrm_byte & 7)
+            };
+            let imm = return_on_pagefault!(read_imm8());
+            f(source, r, imm)
+        },
+        Op::R32Imm(f, _) => {
+            let source = if modrm_byte < 0xC0 {
+                return_on_pagefault!(safe_read32s(return_on_pagefault!(modrm_resolve(
+                    modrm_byte
+                ))))
+            }
+            else {
+                read_reg32(modrm_byte & 7)
             };
             let imm = return_on_pagefault!(read_imm8());
             f(source, r, imm)
@@ -547,4 +569,172 @@ pub unsafe fn instr_0F38CD(source: reg128, r: i32) {
             u32: [w16, w17, w18, w19],
         },
     );
+}
+
+// AES-NI and PCLMULQDQ. One aesenc is a whole round of AES, which costs a guest without these
+// instructions some hundred instructions.
+
+const fn aes_sbox() -> [u8; 256] {
+    let mut sbox = [0u8; 256];
+    let (mut p, mut q) = (1u8, 1u8);
+    loop {
+        // p * 3 and q / 3 in GF(2^8): q stays the inverse of p
+        p = p ^ p << 1 ^ if p & 0x80 != 0 { 0x1B } else { 0 };
+        q ^= q << 1;
+        q ^= q << 2;
+        q ^= q << 4;
+        if q & 0x80 != 0 {
+            q ^= 0x09
+        }
+        sbox[p as usize] =
+            q ^ q.rotate_left(1) ^ q.rotate_left(2) ^ q.rotate_left(3) ^ q.rotate_left(4) ^ 0x63;
+        if p == 1 {
+            break;
+        }
+    }
+    sbox[0] = 0x63;
+    sbox
+}
+const fn aes_inv_sbox() -> [u8; 256] {
+    let mut inv = [0u8; 256];
+    let mut i = 0;
+    while i < 256 {
+        inv[AES_SBOX[i] as usize] = i as u8;
+        i += 1;
+    }
+    inv
+}
+const fn gmul(mut a: u8, mut b: u8) -> u8 {
+    let mut r = 0;
+    while b != 0 {
+        if b & 1 != 0 {
+            r ^= a
+        }
+        a = a << 1 ^ if a & 0x80 != 0 { 0x1B } else { 0 };
+        b >>= 1;
+    }
+    r
+}
+// The column that MixColumns makes of the byte x in row 0 (little endian). The other rows
+// are rotations of it.
+const fn aes_mix_table(m: [u8; 4]) -> [u32; 256] {
+    let mut t = [0u32; 256];
+    let mut i = 0;
+    while i < 256 {
+        let x = i as u8;
+        t[i] = u32::from_le_bytes([gmul(x, m[0]), gmul(x, m[1]), gmul(x, m[2]), gmul(x, m[3])]);
+        i += 1;
+    }
+    t
+}
+static AES_SBOX: [u8; 256] = aes_sbox();
+static AES_INV_SBOX: [u8; 256] = aes_inv_sbox();
+static AES_MIX: [u32; 256] = aes_mix_table([2, 1, 1, 3]);
+static AES_INV_MIX: [u32; 256] = aes_mix_table([14, 9, 13, 11]);
+
+fn aes_mix_columns(x: [u8; 16], table: &[u32; 256]) -> [u8; 16] {
+    let mut out = [0; 16];
+    for c in 0..4 {
+        let col = table[x[4 * c] as usize]
+            ^ table[x[4 * c + 1] as usize].rotate_left(8)
+            ^ table[x[4 * c + 2] as usize].rotate_left(16)
+            ^ table[x[4 * c + 3] as usize].rotate_left(24);
+        out[4 * c..4 * c + 4].copy_from_slice(&col.to_le_bytes());
+    }
+    out
+}
+// ShiftRows and SubBytes; byte r + 4 * c of the register is row r of column c
+fn aes_shift_sub(x: [u8; 16], inverse: bool) -> [u8; 16] {
+    let mut out = [0; 16];
+    for c in 0..4 {
+        for r in 0..4 {
+            out[r + 4 * c] = if inverse {
+                AES_INV_SBOX[x[r + 4 * (c + 4 - r & 3)] as usize]
+            }
+            else {
+                AES_SBOX[x[r + 4 * (c + r & 3)] as usize]
+            }
+        }
+    }
+    out
+}
+unsafe fn aes_round(source: reg128, r: i32, inverse: bool, last: bool) {
+    let mut state = aes_shift_sub(read_xmm128s(r).u8, inverse);
+    if !last {
+        state = aes_mix_columns(state, if inverse { &AES_INV_MIX } else { &AES_MIX });
+    }
+    let state = reg128 { u8: state };
+    write_xmm_reg128(
+        r,
+        reg128 {
+            u64: [state.u64[0] ^ source.u64[0], state.u64[1] ^ source.u64[1]],
+        },
+    );
+}
+#[no_mangle]
+pub unsafe fn instr_660F38DB(source: reg128, r: i32) {
+    // aesimc xmm, xmm/m128
+    write_xmm_reg128(
+        r,
+        reg128 {
+            u8: aes_mix_columns(source.u8, &AES_INV_MIX),
+        },
+    );
+}
+#[no_mangle]
+pub unsafe fn instr_660F38DC(source: reg128, r: i32) {
+    // aesenc xmm, xmm/m128
+    aes_round(source, r, false, false)
+}
+#[no_mangle]
+pub unsafe fn instr_660F38DD(source: reg128, r: i32) {
+    // aesenclast xmm, xmm/m128
+    aes_round(source, r, false, true)
+}
+#[no_mangle]
+pub unsafe fn instr_660F38DE(source: reg128, r: i32) {
+    // aesdec xmm, xmm/m128
+    aes_round(source, r, true, false)
+}
+#[no_mangle]
+pub unsafe fn instr_660F38DF(source: reg128, r: i32) {
+    // aesdeclast xmm, xmm/m128
+    aes_round(source, r, true, true)
+}
+#[no_mangle]
+pub unsafe fn instr_660F3ADF(source: reg128, r: i32, imm8: i32) {
+    // aeskeygenassist xmm, xmm/m128, imm8
+    let sub = |x: u32| u32::from_le_bytes(x.to_le_bytes().map(|b| AES_SBOX[b as usize]));
+    let (x1, x3) = (sub(source.u32[1]), sub(source.u32[3]));
+    let rcon = imm8 as u32 & 0xFF;
+    write_xmm_reg128(
+        r,
+        reg128 {
+            u32: [x1, x1.rotate_right(8) ^ rcon, x3, x3.rotate_right(8) ^ rcon],
+        },
+    );
+}
+#[no_mangle]
+pub unsafe fn instr_660F3A44(source: reg128, r: i32, imm8: i32) {
+    // pclmulqdq xmm, xmm/m128, imm8: multiply two polynomials over GF(2)
+    let a = read_xmm128s(r).u64[imm8 as usize & 1];
+    let b = source.u64[imm8 as usize >> 4 & 1];
+    let (mut low, mut high) = (0, 0);
+    for i in 0..64 {
+        if b >> i & 1 != 0 {
+            low ^= a << i;
+            if i != 0 {
+                high ^= a >> (64 - i)
+            }
+        }
+    }
+    write_xmm_reg128(r, reg128 { u64: [low, high] });
+}
+#[no_mangle]
+pub unsafe fn instr_660F3A22(source: i32, r: i32, imm8: i32) {
+    // pinsrd xmm, r/m32, imm8. This is SSE4.1, which is not complete; the AES code of OpenSSL
+    // uses it without a check for SSE4.1
+    let mut destination = read_xmm128s(r);
+    destination.u32[imm8 as usize & 3] = source as u32;
+    write_xmm_reg128(r, destination);
 }
