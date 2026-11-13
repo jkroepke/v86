@@ -64,7 +64,8 @@ interpreter), cpu (JIT-bound), glibc, spring (a JVM, jumps between JIT
 modules). Report main-thread CPU time and wall time, medians of several
 rounds, before and after, in the same session. Noise is about 10 %.
 Profiler counters (`STATS=1`) and V8 CPU profiles (`PROF=`) show where the
-time goes.
+time goes. `GSTAT=` shows what the guest does (user and kernel, system
+calls, interrupts, port I/O), `IDLE_MS=` what an idle pod costs.
 
 ## Where the time goes (measured 2026-11-13)
 
@@ -101,6 +102,65 @@ time goes.
   kernel runs none; newer SSE/AVX levels do not help them.
 - Generated wasm: spring compiled ~111 MB of JIT modules in a release
   build with up to 3 pages per module (profiler builds make ~2x the bytes).
+
+## The guest kernel and the devices (measured 2026-11-13)
+
+Counters of `src/rust/gueststat.rs` (`GSTAT=` of `tools/pod-bench`), Linux
+7.3.4 with the configuration of tabernetes, 256 MiB, a release build with
+`V86_GUESTSTAT=1`:
+
+| workload | instructions | in the kernel | host time in the kernel | kernel instructions in JIT code |
+|----------|--------------|---------------|-------------------------|---------------------------------|
+| nginx    | 50M          | 55 %          | 69 %                    | 10 %                            |
+| goapp    | 175M         | 22 %          | 34 %                    | 20 %                            |
+| glibc    | 1004M        | 25 %          | 54 %                    | 67 %                            |
+| spring   | 8505M        | 4 %           | 11 %                    | 70 %                            |
+
+- A kernel instruction costs 2-3.5 times the host time of a user
+  instruction (nginx 20 against 11 ns, glibc 12 against 3.4 ns). The reason
+  is not the events below but that kernel code runs in the interpreter, or
+  in JIT code with ~27 instructions per entry: its instructions spread over
+  330-430 pages (90 % of them on ~90 pages), and few pages reach the JIT
+  threshold in a pod start. A lower threshold for kernel pages only
+  did not pay, because of the compiles: with 200k, main-thread CPU -4 % to
+  +1 % and wall time +2 % to +8 % (nginx, goapp, glibc); with 50k, CPU up to
+  +12 % and wall time +9 % to +55 %. Not kept.
+- What the kernel does there: nginx start is system calls (30 % of all
+  instructions; execve 240k, exit_group 177k, openat 31k each) and page
+  faults (24 %; 1650 faults of 7500 instructions each: file pages over 9p
+  with fault-around). glibc text tools: read, getdents64 and
+  copy_file_range are 18 %, with 15400 9p requests. spring: read (9p) 1.6 %,
+  futex 0.6 %; the scheduler is 40 % of the kernel instructions.
+- Events per workload (nginx / goapp / glibc / spring): page faults 1.7k /
+  1.5k / 3.6k / 17k; system calls 1.5k / 3.9k / 17.7k / 37k (glibc and musl
+  programs use sysenter, Go uses int 0x80); CR3 writes 130 / 19 / 3.9k / 41;
+  invlpg 390 / 104 / 500 / 1.7k; timer interrupts 100 per second (PIT,
+  periodic); 9p interrupts 770 / 540 / 15.4k / 12.4k; port I/O is the PIC
+  (3-5 per interrupt, in Rust) and the virtio notify and ISR ports (one each
+  per 9p request). No APIC, no IPIs: the kernel has no SMP.
+- None of these events is a cost in v86. In V8 profiles `do_page_walk` is
+  0.2 %, and `clear_tlb`, `call_interrupt_vector`, `iret`, `switch_seg`,
+  `io_port_write8` and `handle_irqs` are 0.1 % or less each. A CR3 write
+  keeps the global pages (1000-6000 entries, the kernel) and drops 30-160
+  entries of the process. The JVM invalidated 193 modules by writing code.
+  spring fills the list of valid TLB entries (10000) 356 times, which drops
+  all entries of the process: 1.3M of its 1.6M page walks, about 0.2 % of
+  the time.
+- The timers of the devices run once per 100k instructions and on hlt;
+  rdtsc is one call of `performance.now` (270k calls in spring).
+- Idle was the cost: see `hlt_wait` in the list of changes. What is left
+  (20 ms of CPU per second and pod in a Chromium worker) is the tick of the
+  guest: the kernel of tabernetes never stops it. `NO_HZ_IDLE` needs
+  `tsc=reliable` on the command line, and the PIT cannot wait longer than
+  27 ms. With `CONFIG_X86_UP_APIC`, the option `acpi: true` of v86 and
+  `tsc=reliable highres=off`, an idle pod takes 2 interrupts and 16k
+  instructions per second instead of 100 and 240k: 3 ms of CPU per
+  second. v86 still wakes up 10 times per second (the timers of the devices
+  return at most 100 ms). Without `highres=off` the Go runtime sleeps for
+  real: goapp +10 % instructions.
+- `CONFIG_SLUB_TINY=n` in the guest: -1.7 % (nginx) and -3.4 % (glibc)
+  instructions, no change of CPU time beyond the noise, +3.5M instructions
+  per boot.
 
 ## Compiling the JIT modules (measured 2026-11-13)
 
@@ -275,5 +335,24 @@ time goes.
   bails 73.3 / 105.6 -> 64.7 / 84.7 s; one bail block per module instead
   of the code at every site (28.0 -> 22.6 MB) 62.4 / 80.3 -> 61.3 / 78.2 s.
   v86.wasm 2072984 -> 2075009 bytes.
+
+- Idle (2026-11-13): `main_loop` returns whole milliseconds when an idle
+  guest waits in hlt for a timer (`hlt_wait` in `cpu.rs`). It returned the
+  exact time, and for less than 1 ms the caller does not sleep: with the
+  100 Hz tick of Linux, the last millisecond before every tick was a busy
+  loop (115 calls of `main_loop` per tick in a Chromium worker, 440 in
+  Node.js). An idle pod: 89 -> 20 ms of CPU per second in a Chromium worker
+  (4 pods: 356 -> 75), 87 -> 24 in Node.js. The timer interrupt of an idle
+  guest comes up to 1 ms late; interrupts of devices end the sleep as
+  before. The guest is idle when it ran less than 6000 instructions since
+  its last wait (a tick takes 2400-3100). After more work the wait is exact
+  as before: with whole milliseconds for every wait, goapp took 3-6 % more
+  wall time (the Go runtime waits for the tick between pieces of work).
+  With the rule, nginx, goapp and glibc did not change beyond the noise.
+- `src/rust/gueststat.rs`: counters about the guest (user and kernel
+  instructions and host time, JIT share, system calls by number,
+  interrupts by vector, port I/O by port, page faults, TLB flushes, a
+  histogram of kernel addresses) in the profiler build, or in a release
+  build with `V86_GUESTSTAT=1 make build/v86.wasm`.
 
 Work in progress lives on `wip/*` and `codex/*` branches.

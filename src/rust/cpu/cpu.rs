@@ -3670,6 +3670,31 @@ pub unsafe fn segment_prefix_op(seg: i32) {
     *prefixes = 0
 }
 
+// How long to sleep when the CPU waits in hlt and the next timer is due in t milliseconds.
+// The timers of JavaScript count whole milliseconds, and the caller does not sleep for less
+// than one: it comes back at once, again and again, until the timer is due. That is exact,
+// but with the 100 Hz tick of an idle Linux guest this busy loop took 9 % of a host core
+// (setTimeout fires up to 1 ms early, then ~115 calls of main_loop per tick in a Chromium
+// worker and ~440 in Node.js).
+// So an idle guest sleeps until the timer is due, in whole milliseconds; its interrupt
+// comes up to 1 ms late. A guest counts as idle when it ran only a few instructions since
+// its last wait (a timer tick of Linux takes 2400-3100). After real work the wait stays
+// exact: the work may go on with this timer. An interrupt of a device ends every sleep
+// (stop_idling).
+const HLT_IDLE_INSTRUCTIONS: u32 = 6_000;
+static mut hlt_last_instruction_counter: u32 = 0;
+static mut hlt_exact: bool = true;
+
+unsafe fn hlt_wait(t: f64) -> f64 {
+    let ran = (*instruction_counter).wrapping_sub(hlt_last_instruction_counter);
+    hlt_last_instruction_counter = *instruction_counter;
+    if ran != 0 {
+        // the first wait since the guest ran
+        hlt_exact = ran >= HLT_IDLE_INSTRUCTIONS;
+    }
+    if hlt_exact { t } else { t.ceil().max(1.0) }
+}
+
 #[no_mangle]
 pub unsafe fn main_loop() -> f64 {
     profiler::stat_increment(stat::MAIN_LOOP);
@@ -3682,7 +3707,7 @@ pub unsafe fn main_loop() -> f64 {
             handle_irqs();
             if *in_hlt {
                 profiler::stat_increment(stat::MAIN_LOOP_IDLE);
-                return t;
+                return hlt_wait(t);
             }
         }
         else {
@@ -3698,7 +3723,7 @@ pub unsafe fn main_loop() -> f64 {
         let t = js::run_hardware_timers(*acpi_enabled, now);
         handle_irqs();
         if *in_hlt {
-            return t;
+            return hlt_wait(t);
         }
 
         if now - start > TIME_PER_FRAME {
