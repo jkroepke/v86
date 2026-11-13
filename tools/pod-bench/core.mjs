@@ -14,6 +14,7 @@ function options() {
   };
 }
 function jitcfg(e) {
+  for (const kv of (O.cpuhide || "").split(",").filter(Boolean)) { const [k, v] = kv.split("=").map(Number); e.v86.cpu.wm.exports.set_cpuid_hidden(k, v); }
   for (const kv of (O.jitcfg || "").split(",").filter(Boolean)) { const [k, v] = kv.split("=").map(Number); e.v86.cpu.set_jit_config(k, v); }
 }
 function lines(e, port, cb) {

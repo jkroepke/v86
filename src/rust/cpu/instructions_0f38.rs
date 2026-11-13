@@ -1,6 +1,7 @@
 #![allow(non_snake_case)]
 
-// Instructions of the three-byte opcode maps 0F 38 and 0F 3A: SSSE3 and the SHA extensions.
+// Instructions of the three-byte opcode maps 0F 38 and 0F 3A: SSSE3, the SHA extensions, AES-NI,
+// PCLMULQDQ and a few instructions of SSE4.1.
 //
 // These maps are not in gen/x86_table.js. The generators only know one-byte and 0F opcodes, so
 // 0F 38 and 0F 3A are "prefix" entries there, and the third opcode byte is dispatched by hand:
@@ -21,8 +22,10 @@ pub enum Op {
     // the same with an immediate byte
     XmmImm(unsafe fn(reg128, i32, i32), &'static str),
     MmxImm(unsafe fn(u64, i32, i32), &'static str),
-    // fn(source: r/m32, destination xmm register, immediate byte)
-    R32Imm(unsafe fn(i32, i32, i32), &'static str),
+    // fn(source: r32 or memory of 1 or 4 bytes, destination xmm register, immediate byte)
+    R32Imm(unsafe fn(i32, i32, i32), &'static str, u8),
+    // fn(source xmm register, immediate byte) -> value for r32 or memory of 1, 2 or 4 bytes
+    Extract(unsafe fn(i32, i32) -> i32, &'static str, u8),
 }
 
 macro_rules! xmm {
@@ -100,7 +103,11 @@ pub fn find_0f3a(opcode: u8, prefixes_: u8) -> Option<Op> {
     if prefixes_ & PREFIX_66 != 0 {
         match opcode {
             0x0F => Some(Op::XmmImm(instr_660F3A0F, "instr_660F3A0F")),
-            0x22 => Some(Op::R32Imm(instr_660F3A22, "instr_660F3A22")),
+            0x14 => Some(Op::Extract(instr_660F3A14, "instr_660F3A14", 1)),
+            0x15 => Some(Op::Extract(instr_660F3A15, "instr_660F3A15", 2)),
+            0x16 => Some(Op::Extract(instr_660F3A16, "instr_660F3A16", 4)),
+            0x20 => Some(Op::R32Imm(instr_660F3A20, "instr_660F3A20", 1)),
+            0x22 => Some(Op::R32Imm(instr_660F3A22, "instr_660F3A22", 4)),
             0x44 => Some(Op::XmmImm(instr_660F3A44, "instr_660F3A44")),
             0xDF => Some(Op::XmmImm(instr_660F3ADF, "instr_660F3ADF")),
             _ => None,
@@ -152,11 +159,31 @@ unsafe fn run(op: Option<Op>) {
             let imm = return_on_pagefault!(read_imm8());
             f(source, r, imm)
         },
-        Op::R32Imm(f, _) => {
+        Op::Extract(f, _, size) => {
+            if modrm_byte < 0xC0 {
+                let addr = return_on_pagefault!(modrm_resolve(modrm_byte));
+                let imm = return_on_pagefault!(read_imm8());
+                let value = f(r, imm);
+                return_on_pagefault!(match size {
+                    1 => safe_write8(addr, value),
+                    2 => safe_write16(addr, value),
+                    _ => safe_write32(addr, value),
+                });
+            }
+            else {
+                let imm = return_on_pagefault!(read_imm8());
+                write_reg32(modrm_byte & 7, f(r, imm));
+            }
+        },
+        Op::R32Imm(f, _, size) => {
             let source = if modrm_byte < 0xC0 {
-                return_on_pagefault!(safe_read32s(return_on_pagefault!(modrm_resolve(
-                    modrm_byte
-                ))))
+                let addr = return_on_pagefault!(modrm_resolve(modrm_byte));
+                if size == 1 {
+                    return_on_pagefault!(safe_read8(addr))
+                }
+                else {
+                    return_on_pagefault!(safe_read32s(addr))
+                }
             }
             else {
                 read_reg32(modrm_byte & 7)
@@ -730,10 +757,34 @@ pub unsafe fn instr_660F3A44(source: reg128, r: i32, imm8: i32) {
     }
     write_xmm_reg128(r, reg128 { u64: [low, high] });
 }
+// pextrb, pextrw, pextrd, pinsrb and pinsrd are SSE4.1. The rest of SSE4.1 is missing, so CPUID
+// does not report it. But every CPU with AES-NI or SHA has SSE4.1, and code relies on that: the
+// AES-CTR and the SHA-1 code of OpenSSL use pextrd and pinsrd without a look at the SSE4.1 bit.
+#[no_mangle]
+pub unsafe fn instr_660F3A14(r: i32, imm8: i32) -> i32 {
+    // pextrb r32/m8, xmm, imm8
+    read_xmm128s(r).u8[imm8 as usize & 15] as i32
+}
+#[no_mangle]
+pub unsafe fn instr_660F3A15(r: i32, imm8: i32) -> i32 {
+    // pextrw r32/m16, xmm, imm8
+    read_xmm128s(r).u16[imm8 as usize & 7] as i32
+}
+#[no_mangle]
+pub unsafe fn instr_660F3A16(r: i32, imm8: i32) -> i32 {
+    // pextrd r/m32, xmm, imm8
+    read_xmm128s(r).u32[imm8 as usize & 3] as i32
+}
+#[no_mangle]
+pub unsafe fn instr_660F3A20(source: i32, r: i32, imm8: i32) {
+    // pinsrb xmm, r32/m8, imm8
+    let mut destination = read_xmm128s(r);
+    destination.u8[imm8 as usize & 15] = source as u8;
+    write_xmm_reg128(r, destination);
+}
 #[no_mangle]
 pub unsafe fn instr_660F3A22(source: i32, r: i32, imm8: i32) {
-    // pinsrd xmm, r/m32, imm8. This is SSE4.1, which is not complete; the AES code of OpenSSL
-    // uses it without a check for SSE4.1
+    // pinsrd xmm, r/m32, imm8
     let mut destination = read_xmm128s(r);
     destination.u32[imm8 as usize & 3] = source as u32;
     write_xmm_reg128(r, destination);

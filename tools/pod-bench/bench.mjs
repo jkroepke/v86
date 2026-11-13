@@ -52,7 +52,7 @@ const springJSON = path.join(DATA, "spring.json");
 await run({
   spring: fs.existsSync(springJSON) ? JSON.parse(fs.readFileSync(springJSON)) : null,
   hook, cpu, stats, mods, v86dir: V86DIR, read, workload, rounds: Number(rounds),
-  jitcfg: process.env.JITCFG, script: process.env.SCRIPT,
+  jitcfg: process.env.JITCFG, cpuhide: process.env.CPUHIDE, script: process.env.SCRIPT,
   v86opts: process.env.V86OPTS && JSON.parse(process.env.V86OPTS), log: console.log,
 });
 process.exit(0);

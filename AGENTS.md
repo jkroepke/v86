@@ -68,6 +68,22 @@ time goes.
   kernel runs none; newer SSE/AVX levels do not help them.
 - Generated wasm: spring compiles ~218 MB of JIT modules (~175 KB each).
 
+## Instruction set extensions: what pays (measured 2026-11-13)
+
+- Who uses them in an i386 pod: OpenSSL (SHA-1/256 with SHA: 5-6x fewer
+  instructions; AES with AES-NI; vpaes, ChaCha20 and SHA-1/256 with SSSE3)
+  and the string functions of glibc with SSSE3 (strcmp, strcpy: 2-8x fewer
+  instructions in a micro benchmark; memcpy-ssse3 instead of `rep movs`
+  costs 1-3 % more instructions in text tools). Go on 386 and musl use none
+  of them, and the kernel of the pods has no crypto.
+- FSRM in CPUID: no effect. The i386 kernel and the i386 glibc have no
+  FSRM path (only x86_64 has).
+- bswap and bsf/bsr are 0.07 % of the instructions of Spring Boot: MOVBE,
+  BMI1/2, LZCNT and TZCNT cannot pay.
+- An instruction that the JIT runs through a helper call can cost more than
+  the scalar code it replaces: SSSE3 only paid after pshufb and palignr
+  became Wasm SIMD.
+
 ## Changes of this fork (newest last)
 
 - MessageChannel yield inside a worker (no helper worker round trip per ms).
@@ -99,5 +115,18 @@ time goes.
   main thread (profiles of nginx, goapp, glibc), so a port to Rust is not
   worth it. nginx -7 % CPU (-9 % with `readInto`), glibc -5.5 % guest
   instructions.
+- SSSE3, the SHA extensions, AES-NI and PCLMULQDQ
+  (`src/rust/cpu/instructions_0f38.rs`), reported in CPUID. The opcode maps
+  0F 38 and 0F 3A are not in `gen/x86_table.js`: the third byte is
+  dispatched by hand through `find_0f38`/`find_0f3a` (interpreter, JIT and
+  analysis use the same table), so their tests are written by hand in
+  `tests/nasm`. `set_cpuid_hidden(0, 0x2000202)` and
+  `set_cpuid_hidden(1, 0x20000000)` (wasm exports) give the old CPUID.
+- pextrb/w/d and pinsrb/d of SSE4.1, without the CPUID bit: OpenSSL uses
+  them in its AES-NI and SHA code without a check (every real CPU with AES
+  or SHA has SSE4.1). Report SSE4.1 only when all of it exists.
+- More Wasm SIMD in the JIT (pshufb, palignr, padd, psub, pcmpgt, shifts by
+  immediate), and MMX quadword instructions as i64 code (32-bit OpenSSL
+  does SHA-512 and RSA in mm registers).
 
 Work in progress lives on `wip/*` and `codex/*` branches.

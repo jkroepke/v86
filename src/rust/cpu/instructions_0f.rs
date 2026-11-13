@@ -3278,6 +3278,8 @@ pub unsafe fn instr_0FA2() {
             eax = 3 | 7 << 4 | 6 << 8; // pentium3
             ebx = 1 << 16 | 8 << 8; // cpu count, clflush size
             ecx = 1 << 0 | 1 << 23 | 1 << 30; // sse3, popcnt, rdrand
+            // pclmulqdq, ssse3, aes. No sse4.1: only pextrb/w/d and pinsrb/d of it exist
+            ecx |= (1 << 1 | 1 << 9 | 1 << 25) & !cpuid_hidden[0];
             let vme = 0 << 1;
             if config::VMWARE_HYPERVISOR_PORT {
                 ecx |= 1 << 31
@@ -3338,7 +3340,8 @@ pub unsafe fn instr_0FA2() {
         7 => {
             if read_reg32(ECX) == 0 {
                 eax = 0; // maximum supported sub-level
-                ebx = 1 << 9; // enhanced REP MOVSB/STOSB
+                ebx = 1 << 9 // enhanced REP MOVSB/STOSB
+                    | (1 << 29) & !cpuid_hidden[1]; // sha
                 ecx = 0;
                 edx = 0;
             }
