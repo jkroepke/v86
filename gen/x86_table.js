@@ -403,9 +403,11 @@ const encodings = [
     { opcode: 0x0F37, skip: 1, block_boundary: 1 }, // getsec
 
     // ssse3+
-    { opcode: 0x0F38, skip: 1, block_boundary: 1 },
+    // The three-byte maps 0F 38 and 0F 3A are dispatched by hand, like a prefix:
+    // see src/rust/cpu/instructions_0f38.rs
+    { opcode: 0x0F38, prefix: 1 },
     { opcode: 0x0F39, skip: 1, block_boundary: 1 },
-    { opcode: 0x0F3A, skip: 1, block_boundary: 1 },
+    { opcode: 0x0F3A, prefix: 1 },
     { opcode: 0x0F3B, skip: 1, block_boundary: 1 },
     { opcode: 0x0F3C, skip: 1, block_boundary: 1 },
     { opcode: 0x0F3D, skip: 1, block_boundary: 1 },

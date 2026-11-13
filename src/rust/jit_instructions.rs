@@ -7,8 +7,11 @@ use crate::cpu::cpu::{
     FLAG_IOPL, FLAG_OVERFLOW, FLAG_SUB, FLAG_VM, FLAG_ZERO, OPSIZE_16, OPSIZE_32, OPSIZE_8,
 };
 use crate::cpu::global_pointers;
+use crate::cpu::instructions_0f38::{find_0f38, find_0f3a, Op};
 use crate::gen;
+use crate::jit;
 use crate::jit::{Instruction, InstructionOperand, InstructionOperandDest, JitContext};
+use crate::modrm;
 use crate::modrm::{jit_add_seg_offset, jit_add_seg_offset_no_override, ModrmByte};
 use crate::prefix::{PREFIX_66, PREFIX_67, PREFIX_F2, PREFIX_F3};
 use crate::prefix::{PREFIX_MASK_SEGMENT, SEG_PREFIX_ZERO};
@@ -113,6 +116,64 @@ pub fn instr16_0F_jit(ctx: &mut JitContext, instr_flags: &mut u32) {
 }
 pub fn instr32_0F_jit(ctx: &mut JitContext, instr_flags: &mut u32) {
     gen::jit0f::jit(ctx.cpu.read_imm8() as u32 | 0x100, ctx, instr_flags)
+}
+fn three_byte_jit(ctx: &mut JitContext, instr_flags: &mut u32, op: Option<Op>) {
+    let op = match op {
+        Some(op) => op,
+        None => {
+            codegen::gen_trigger_ud(ctx);
+            *instr_flags |= jit::JIT_INSTR_BLOCK_BOUNDARY_FLAG;
+            return;
+        },
+    };
+    let modrm_byte = ctx.cpu.read_imm8();
+    codegen::gen_task_switch_test_mmx(ctx);
+    let (r1, r2) = ((modrm_byte & 7) as u32, (modrm_byte >> 3 & 7) as u32);
+    if modrm_byte < 0xC0 {
+        let addr = modrm::decode(ctx.cpu, modrm_byte);
+        match op {
+            Op::Xmm(_, name) => sse_read128_xmm_mem(ctx, name, addr, r2),
+            Op::Mmx(_, name) => mmx_read64_mm_mem(ctx, name, addr, r2),
+            Op::XmmImm(_, name) => {
+                let imm = ctx.cpu.read_imm8() as u32;
+                sse_read128_xmm_mem_imm(ctx, name, addr, r2, imm)
+            },
+            Op::MmxImm(_, name) => {
+                let imm = ctx.cpu.read_imm8() as u32;
+                codegen::gen_modrm_resolve_safe_read64(ctx, addr);
+                ctx.builder.const_i32(r2 as i32);
+                ctx.builder.const_i32(imm as i32);
+                ctx.builder.call_fn3_i64_i32_i32(name)
+            },
+        }
+    }
+    else {
+        match op {
+            Op::Xmm(_, name) => sse_read128_xmm_xmm(ctx, name, r1, r2),
+            Op::Mmx(_, name) => mmx_read64_mm_mm(ctx, name, r1, r2),
+            Op::XmmImm(_, name) => {
+                let imm = ctx.cpu.read_imm8() as u32;
+                sse_read128_xmm_xmm_imm(ctx, name, r1, r2, imm)
+            },
+            Op::MmxImm(_, name) => {
+                let imm = ctx.cpu.read_imm8() as u32;
+                ctx.builder
+                    .const_i32(global_pointers::get_reg_mmx_offset(r1) as i32);
+                ctx.builder.load_aligned_i64(0);
+                ctx.builder.const_i32(r2 as i32);
+                ctx.builder.const_i32(imm as i32);
+                ctx.builder.call_fn3_i64_i32_i32(name)
+            },
+        }
+    }
+}
+pub fn instr_0F38_jit(ctx: &mut JitContext, instr_flags: &mut u32) {
+    let op = find_0f38(ctx.cpu.read_imm8(), ctx.cpu.prefixes);
+    three_byte_jit(ctx, instr_flags, op)
+}
+pub fn instr_0F3A_jit(ctx: &mut JitContext, instr_flags: &mut u32) {
+    let op = find_0f3a(ctx.cpu.read_imm8(), ctx.cpu.prefixes);
+    three_byte_jit(ctx, instr_flags, op)
 }
 pub fn instr_26_jit(ctx: &mut JitContext, instr_flags: &mut u32) {
     jit_handle_segment_prefix(ES, ctx, instr_flags)

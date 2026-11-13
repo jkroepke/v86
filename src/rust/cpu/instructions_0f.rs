@@ -1426,12 +1426,10 @@ pub unsafe fn instr_0F37() {
     // getsec
     undefined_instruction();
 }
-#[no_mangle]
-pub unsafe fn instr_0F38() { unimplemented_sse(); }
+pub unsafe fn instr_0F38() { crate::cpu::instructions_0f38::instr_0F38() }
 #[no_mangle]
 pub unsafe fn instr_0F39() { unimplemented_sse(); }
-#[no_mangle]
-pub unsafe fn instr_0F3A() { unimplemented_sse(); }
+pub unsafe fn instr_0F3A() { crate::cpu::instructions_0f38::instr_0F3A() }
 #[no_mangle]
 pub unsafe fn instr_0F3B() { unimplemented_sse(); }
 #[no_mangle]
