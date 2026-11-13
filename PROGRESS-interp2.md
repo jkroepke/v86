@@ -16,3 +16,13 @@ Baseline = origin/master cbac223 (build copy: /home/claude/bench/v86/i2base).
 - spring at 200k/500k/1M (scratchpad spring-thr.txt), then pick the threshold.
 - interpreter per-instruction work (dispatch, imm reads, loop bookkeeping).
 - browser check of v86.wasm compile sharing between pod workers; tabernetes patch.
+
+## 18:10 update
+- spring 1 round, threshold 200k / 500k / 1M: main 88.4 / 84.4 / 82.8 s, process 162 / 142 / 131 s.
+  -> raise JIT_THRESHOLD (candidate 500k-1M); to measure again in quiet A/B.
+- Uncommitted-then-committed here: size bit of the opcode kept in InterpreterLoop (no is_32 load
+  per instruction; update_cs_size ends the block), modrm fast path with a branch-free
+  displacement. JIT off ipair nginx: -2..-4 % (noisy).
+- Browser (bench/web/fresh.html, pw2.cjs): posting one WebAssembly.Module from the page to each
+  pod worker: "started" 42-81 ms instead of 100-176 ms, Chromium CPU ~0.4 s less per pod.
+  Draft tabernetes patch in scratchpad tab/ (vm.js postStart, bridge.js relay, vmworker.js wasm_fn).

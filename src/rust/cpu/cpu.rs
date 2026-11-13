@@ -3091,6 +3091,9 @@ pub unsafe fn cpl_changed() { *last_virt_eip = -1 }
 pub unsafe fn update_cs_size(new_size: bool) {
     if *is_32 != new_size {
         *is_32 = new_size;
+        // the loop of the interpreter keeps the operand size of its block (InterpreterLoop):
+        // the block ends here, also when an exception changed the size
+        jit_block_boundary |= BLOCK_BOUNDARY;
     }
 }
 
@@ -3217,12 +3220,13 @@ pub unsafe fn modrm_resolve(modrm_byte: i32) -> OrPageFault<i32> {
 unsafe fn modrm_resolve_packed(modrm_byte: i32) -> i64 {
     dbg_assert!(modrm_byte < 0xC0);
     // Fast path: 32-bit addresses, no segment prefix, and the sib byte and the displacement (at
-    // most 5 bytes) are in the code page of the last translation. Everything else, and every case
-    // that can fault, takes the general path below; nothing is changed before that.
+    // most 5 bytes, and the 4 bytes that are always read for the displacement) are in the code
+    // page of the last translation. Everything else, and every case that can fault, takes the
+    // general path below; nothing is changed before that.
     let eip = *instruction_pointer;
     if *is_32
         && *prefixes & (prefix::PREFIX_MASK_SEGMENT | prefix::PREFIX_MASK_ADDRSIZE) == 0
-        && ((eip ^ *last_virt_eip) as u32) < 0x1000 - 5
+        && ((eip ^ *last_virt_eip) as u32) < 0x1000 - 9
     {
         let mut code = (*eip_phys ^ eip) as u32;
         let rm = modrm_byte & 7;
@@ -3255,27 +3259,21 @@ unsafe fn modrm_resolve_packed(modrm_byte: i32) -> i64 {
                 addr += read_reg32(index) << (sib_byte >> 6 & 3);
             }
         }
-        else if rm == 5 {
-            if mode == 0 {
-                addr = memory::read32_no_mmap_check(code);
-                code += 4;
-            }
-            else {
-                addr = read_reg32(EBP);
-                seg = SS;
-            }
+        else if modrm_byte & 0xC7 == 5 {
+            addr = memory::read32_no_mmap_check(code);
+            code += 4;
         }
         else {
             addr = read_reg32(rm);
+            if rm == 5 {
+                seg = SS;
+            }
         }
-        if mode == 1 {
-            addr += memory::read8_no_mmap_check(code) << 24 >> 24;
-            code += 1;
-        }
-        else if mode == 2 {
-            addr += memory::read32_no_mmap_check(code);
-            code += 4;
-        }
+        // The displacement without a branch (the mode of an instruction is hard to predict):
+        // the 4 bytes are in the page, see above
+        let d = memory::read32_no_mmap_check(code);
+        addr += if mode == 1 { d << 24 >> 24 } else if mode == 2 { d } else { 0 };
+        code += ((mode | mode << 1) & 5) as u32;
         if !*segment_is_null.offset(seg as isize) {
             *instruction_pointer = eip + (code - (*eip_phys ^ eip) as u32) as i32;
             return (addr + *segment_offsets.offset(seg as isize)) as u32 as i64;
@@ -3304,14 +3302,19 @@ pub struct InterpreterLoop {
     page: i32,
     // instructions that ran
     pub count: u32,
+    // bit 8 of the opcodes of the block: the operand size. It changes only at the end of a block
+    // (far jumps, iret, ...), so the loop does not load is_32 for every instruction. A prefix
+    // runs its instruction in a nested call with its own bit.
+    size_bit: u32,
 }
 
 #[inline(always)]
-pub unsafe fn interpreter_loop_start() -> InterpreterLoop {
+pub unsafe fn interpreter_loop_start(opcode: u32) -> InterpreterLoop {
     // the caller has read the opcode
     InterpreterLoop {
         page: *instruction_pointer - 1 & !0xFFF,
         count: 0,
+        size_bit: opcode & 0x100,
     }
 }
 
@@ -3353,7 +3356,8 @@ pub unsafe fn interpreter_loop_next(state: &mut InterpreterLoop) -> Option<u32> 
 
     record_opstat_interpreted(phys_addr);
     *instruction_pointer = eip + 1;
-    Some(*memory::mem8.offset(phys_addr as isize) as u32 | (*is_32 as u32) << 8)
+    dbg_assert!(state.size_bit == (*is_32 as u32) << 8);
+    Some(*memory::mem8.offset(phys_addr as isize) as u32 | state.size_bit)
 }
 
 // profiler build: count the opcode of an instruction that the interpreter is about to run
