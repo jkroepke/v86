@@ -133,7 +133,7 @@ function gen_instruction_body(encodings, size)
 
     if(encoding.e)
     {
-        code.push(`let modrm_byte = ${wrap_imm_call("read_imm8()")};`);
+        code.push(`let modrm_byte = ${wrap_imm_call("read_modrm_byte()")};`);
     }
 
     if(has_66.length || has_f2.length || has_f3.length)
@@ -412,7 +412,7 @@ function gen_table()
         const code = [
             "#![cfg_attr(rustfmt, rustfmt_skip)]",
 
-            "use crate::cpu::cpu::{after_block_boundary, modrm_resolve};",
+            "use crate::cpu::cpu::{after_block_boundary, modrm_resolve, read_modrm_byte};",
             "use crate::cpu::cpu::{read_imm8, read_imm8s, read_imm16, read_imm32s, read_moffs};",
             "use crate::cpu::cpu::{task_switch_test, trigger_ud};",
             "use crate::cpu::instructions;",
@@ -476,7 +476,7 @@ function gen_table()
         const code = [
             "#![cfg_attr(rustfmt, rustfmt_skip)]",
 
-            "use crate::cpu::cpu::{after_block_boundary, modrm_resolve};",
+            "use crate::cpu::cpu::{after_block_boundary, modrm_resolve, read_modrm_byte};",
             "use crate::cpu::cpu::{read_imm8, read_imm16, read_imm32s};",
             "use crate::cpu::cpu::{task_switch_test, task_switch_test_mmx, trigger_ud};",
             "use crate::cpu::instructions_0f;",

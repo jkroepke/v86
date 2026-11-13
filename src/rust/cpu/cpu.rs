@@ -2581,49 +2581,127 @@ pub fn check_tlb_invariants() {
 
 pub const DISABLE_EIP_TRANSLATION_OPTIMISATION: bool = false;
 
-pub unsafe fn read_imm8() -> OrPageFault<i32> {
+// A Result<i32, ()> in one i64: the value in the low 32 bits, or -1 for Err. wasm returns a
+// Result<i32, ()> through a pointer into the shadow stack; an i64 stays in a register. The hot
+// helpers of the interpreter are a packed function plus an inlined wrapper that unpacks.
+pub const PACKED_ERR: i64 = -1;
+#[inline(always)]
+pub fn pack_result(r: OrPageFault<i32>) -> i64 {
+    match r {
+        Ok(v) => v as u32 as i64,
+        Err(()) => PACKED_ERR,
+    }
+}
+#[inline(always)]
+pub fn unpack_result(r: i64) -> OrPageFault<i32> { if r < 0 { Err(()) } else { Ok(r as i32) } }
+
+#[cold]
+#[inline(never)]
+unsafe fn read_imm8_slow() -> i64 {
     let eip = *instruction_pointer;
-    if DISABLE_EIP_TRANSLATION_OPTIMISATION || 0 != eip & !0xFFF ^ *last_virt_eip {
-        *eip_phys = (translate_address_fetch(eip)? ^ eip as u32) as i32;
-        *last_virt_eip = eip & !0xFFF
+    match translate_address_fetch(eip) {
+        Err(()) => return PACKED_ERR,
+        Ok(phys) => {
+            *eip_phys = (phys ^ eip as u32) as i32;
+            *last_virt_eip = eip & !0xFFF;
+        },
     }
     dbg_assert!(!memory::in_mapped_range((*eip_phys ^ eip) as u32));
-    let data8 = *memory::mem8.offset((*eip_phys ^ eip) as isize) as i32;
+    let data8 = *memory::mem8.offset((*eip_phys ^ eip) as u32 as isize) as i32;
     *instruction_pointer = eip + 1;
-    return Ok(data8);
+    data8 as i64
 }
 
-pub unsafe fn read_imm8s() -> OrPageFault<i32> { return Ok(read_imm8()? << 24 >> 24); }
+unsafe fn read_imm8_packed() -> i64 {
+    let eip = *instruction_pointer;
+    if DISABLE_EIP_TRANSLATION_OPTIMISATION || 0 != eip & !0xFFF ^ *last_virt_eip {
+        return read_imm8_slow();
+    }
+    dbg_assert!(!memory::in_mapped_range((*eip_phys ^ eip) as u32));
+    let data8 = *memory::mem8.offset((*eip_phys ^ eip) as u32 as isize) as i32;
+    *instruction_pointer = eip + 1;
+    data8 as i64
+}
 
-pub unsafe fn read_imm16() -> OrPageFault<i32> {
+#[inline(always)]
+pub unsafe fn read_imm8() -> OrPageFault<i32> { unpack_result(read_imm8_packed()) }
+
+// The modrm byte of the interpreter: the common case (the byte is in the code page of the last
+// translation) is inlined into every instruction, the page walk is not.
+#[inline(always)]
+pub unsafe fn read_modrm_byte() -> OrPageFault<i32> {
+    let eip = *instruction_pointer;
+    if 0 != eip & !0xFFF ^ *last_virt_eip {
+        return unpack_result(read_imm8_slow());
+    }
+    let data8 = *memory::mem8.offset((*eip_phys ^ eip) as u32 as isize) as i32;
+    *instruction_pointer = eip + 1;
+    Ok(data8)
+}
+
+unsafe fn read_imm8s_packed() -> i64 {
+    let r = read_imm8_packed();
+    if r < 0 { r } else { ((r as i32) << 24 >> 24) as u32 as i64 }
+}
+#[inline(always)]
+pub unsafe fn read_imm8s() -> OrPageFault<i32> { unpack_result(read_imm8s_packed()) }
+
+#[cold]
+#[inline(never)]
+unsafe fn read_imm16_slow() -> i64 {
+    let low = read_imm8_packed();
+    if low < 0 {
+        return low;
+    }
+    let high = read_imm8_packed();
+    if high < 0 {
+        return high;
+    }
+    low | high << 8
+}
+
+unsafe fn read_imm16_packed() -> i64 {
     // Two checks in one comparison:
     // 1. Did the high 20 bits of eip change
     // or 2. Are the low 12 bits of eip 0xFFF (and this read crosses a page boundary)
-    if DISABLE_EIP_TRANSLATION_OPTIMISATION
-        || (*instruction_pointer ^ *last_virt_eip) as u32 > 0xFFE
-    {
-        return Ok(read_imm8()? | read_imm8()? << 8);
+    let eip = *instruction_pointer;
+    if DISABLE_EIP_TRANSLATION_OPTIMISATION || (eip ^ *last_virt_eip) as u32 > 0xFFE {
+        return read_imm16_slow();
     }
-    else {
-        let data16 = memory::read16((*eip_phys ^ *instruction_pointer) as u32);
-        *instruction_pointer = *instruction_pointer + 2;
-        return Ok(data16);
-    };
+    // code is never in a mapped range (see read_imm8)
+    let data16 = memory::read16_no_mmap_check((*eip_phys ^ eip) as u32);
+    *instruction_pointer = eip + 2;
+    data16 as i64
+}
+#[inline(always)]
+pub unsafe fn read_imm16() -> OrPageFault<i32> { unpack_result(read_imm16_packed()) }
+
+#[cold]
+#[inline(never)]
+unsafe fn read_imm32s_slow() -> i64 {
+    let low = read_imm16_packed();
+    if low < 0 {
+        return low;
+    }
+    let high = read_imm16_packed();
+    if high < 0 {
+        return high;
+    }
+    low | high << 16
 }
 
-pub unsafe fn read_imm32s() -> OrPageFault<i32> {
+unsafe fn read_imm32s_packed() -> i64 {
     // Analogue to the above comment
-    if DISABLE_EIP_TRANSLATION_OPTIMISATION
-        || (*instruction_pointer ^ *last_virt_eip) as u32 > 0xFFC
-    {
-        return Ok(read_imm16()? | read_imm16()? << 16);
+    let eip = *instruction_pointer;
+    if DISABLE_EIP_TRANSLATION_OPTIMISATION || (eip ^ *last_virt_eip) as u32 > 0xFFC {
+        return read_imm32s_slow();
     }
-    else {
-        let data32 = memory::read32s((*eip_phys ^ *instruction_pointer) as u32);
-        *instruction_pointer = *instruction_pointer + 4;
-        return Ok(data32);
-    };
+    let data32 = memory::read32_no_mmap_check((*eip_phys ^ eip) as u32);
+    *instruction_pointer = eip + 4;
+    data32 as u32 as i64
 }
+#[inline(always)]
+pub unsafe fn read_imm32s() -> OrPageFault<i32> { unpack_result(read_imm32s_packed()) }
 
 pub unsafe fn is_osize_32() -> bool {
     dbg_assert!(!in_jit);
@@ -3119,13 +3197,85 @@ pub unsafe fn get_seg_prefix_ss(offset: i32) -> OrPageFault<i32> {
     Ok(get_seg_prefix(SS)? + offset)
 }
 
+#[inline(always)]
 pub unsafe fn modrm_resolve(modrm_byte: i32) -> OrPageFault<i32> {
-    if is_asize_32() {
-        resolve_modrm32(modrm_byte)
+    unpack_result(modrm_resolve_packed(modrm_byte))
+}
+
+#[inline(never)]
+unsafe fn modrm_resolve_packed(modrm_byte: i32) -> i64 {
+    dbg_assert!(modrm_byte < 0xC0);
+    // Fast path: 32-bit addresses, no segment prefix, and the sib byte and the displacement (at
+    // most 5 bytes) are in the code page of the last translation. Everything else, and every case
+    // that can fault, takes the general path below; nothing is changed before that.
+    let eip = *instruction_pointer;
+    if *is_32
+        && *prefixes & (prefix::PREFIX_MASK_SEGMENT | prefix::PREFIX_MASK_ADDRSIZE) == 0
+        && ((eip ^ *last_virt_eip) as u32) < 0x1000 - 5
+    {
+        let mut code = (*eip_phys ^ eip) as u32;
+        let rm = modrm_byte & 7;
+        let mode = modrm_byte >> 6;
+        let mut seg = DS;
+        let mut addr;
+        if rm == 4 {
+            let sib_byte = memory::read8_no_mmap_check(code);
+            code += 1;
+            let base = sib_byte & 7;
+            let index = sib_byte >> 3 & 7;
+            if base == 4 {
+                addr = read_reg32(ESP);
+                seg = SS;
+            }
+            else if base == 5 {
+                if mode == 0 {
+                    addr = memory::read32_no_mmap_check(code);
+                    code += 4;
+                }
+                else {
+                    addr = read_reg32(EBP);
+                    seg = SS;
+                }
+            }
+            else {
+                addr = read_reg32(base);
+            }
+            if index != 4 {
+                addr += read_reg32(index) << (sib_byte >> 6 & 3);
+            }
+        }
+        else if rm == 5 {
+            if mode == 0 {
+                addr = memory::read32_no_mmap_check(code);
+                code += 4;
+            }
+            else {
+                addr = read_reg32(EBP);
+                seg = SS;
+            }
+        }
+        else {
+            addr = read_reg32(rm);
+        }
+        if mode == 1 {
+            addr += memory::read8_no_mmap_check(code) << 24 >> 24;
+            code += 1;
+        }
+        else if mode == 2 {
+            addr += memory::read32_no_mmap_check(code);
+            code += 4;
+        }
+        if !*segment_is_null.offset(seg as isize) {
+            *instruction_pointer = eip + (code - (*eip_phys ^ eip) as u32) as i32;
+            return (addr + *segment_offsets.offset(seg as isize)) as u32 as i64;
+        }
     }
-    else {
-        resolve_modrm16(modrm_byte)
-    }
+    modrm_resolve_slow(modrm_byte)
+}
+
+#[inline(never)]
+unsafe fn modrm_resolve_slow(modrm_byte: i32) -> i64 {
+    pack_result(if is_asize_32() { resolve_modrm32(modrm_byte) } else { resolve_modrm16(modrm_byte) })
 }
 
 pub unsafe fn run_instruction(opcode: i32) { gen::interpreter::run(opcode as u32) }
@@ -3535,25 +3685,62 @@ pub unsafe fn virt_boundary_write32(low: u32, high: u32, value: i32) {
     memory::write8(high as u32, value >> 24);
 }
 
-pub unsafe fn safe_read8(addr: i32) -> OrPageFault<i32> {
-    Ok(memory::read8(translate_address_read(addr)?))
+#[inline(always)]
+pub unsafe fn safe_read8(addr: i32) -> OrPageFault<i32> { unpack_result(safe_read8_packed(addr)) }
+unsafe fn safe_read8_packed(addr: i32) -> i64 {
+    match translate_address_read(addr) {
+        Ok(phys_addr) => memory::read8(phys_addr) as u32 as i64,
+        Err(()) => PACKED_ERR,
+    }
 }
 
-pub unsafe fn safe_read16(addr: i32) -> OrPageFault<i32> {
+#[inline(always)]
+pub unsafe fn safe_read16(addr: i32) -> OrPageFault<i32> { unpack_result(safe_read16_packed(addr)) }
+#[cold]
+#[inline(never)]
+unsafe fn safe_read16_boundary(addr: i32) -> i64 {
+    let low = safe_read8_packed(addr);
+    if low < 0 {
+        return low;
+    }
+    let high = safe_read8_packed(addr + 1);
+    if high < 0 {
+        return high;
+    }
+    low | high << 8
+}
+unsafe fn safe_read16_packed(addr: i32) -> i64 {
     if addr & 0xFFF == 0xFFF {
-        Ok(safe_read8(addr)? | safe_read8(addr + 1)? << 8)
+        return safe_read16_boundary(addr);
     }
-    else {
-        Ok(memory::read16(translate_address_read(addr)?))
+    match translate_address_read(addr) {
+        Ok(phys_addr) => memory::read16(phys_addr) as u32 as i64,
+        Err(()) => PACKED_ERR,
     }
 }
 
-pub unsafe fn safe_read32s(addr: i32) -> OrPageFault<i32> {
-    if addr & 0xFFF >= 0xFFD {
-        Ok(safe_read16(addr)? | safe_read16(addr + 2)? << 16)
+#[inline(always)]
+pub unsafe fn safe_read32s(addr: i32) -> OrPageFault<i32> { unpack_result(safe_read32s_packed(addr)) }
+#[cold]
+#[inline(never)]
+unsafe fn safe_read32s_boundary(addr: i32) -> i64 {
+    let low = safe_read16_packed(addr);
+    if low < 0 {
+        return low;
     }
-    else {
-        Ok(memory::read32s(translate_address_read(addr)?))
+    let high = safe_read16_packed(addr + 2);
+    if high < 0 {
+        return high;
+    }
+    low | high << 16
+}
+unsafe fn safe_read32s_packed(addr: i32) -> i64 {
+    if addr & 0xFFF >= 0xFFD {
+        return safe_read32s_boundary(addr);
+    }
+    match translate_address_read(addr) {
+        Ok(phys_addr) => memory::read32s(phys_addr) as u32 as i64,
+        Err(()) => PACKED_ERR,
     }
 }
 
