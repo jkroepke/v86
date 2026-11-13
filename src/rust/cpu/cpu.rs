@@ -3417,9 +3417,9 @@ pub unsafe fn cycle_internal() {
         Some(c) => {
             let c = c.as_ref();
 
-            if initial_state_flags == c.state_flags && !jit_bailed {
+            if initial_state_flags == c.state_flags {
                 let state = c.state_table[initial_eip as usize & 0xFFF];
-                if state != u16::MAX {
+                if state != u16::MAX && !jit_bailed {
                     jit_entry = Some((c.wasm_table_index.to_u16(), state));
                 }
                 else {
@@ -3545,13 +3545,19 @@ pub unsafe fn cycle_internal() {
         let initial_instruction_counter = *instruction_counter;
         jit_run_interpreted(phys_addr);
 
-        jit::jit_increase_hotness_and_maybe_compile(
-            initial_eip,
-            phys_addr,
-            get_seg_cs() as u32,
-            initial_state_flags,
-            *instruction_counter - initial_instruction_counter,
-        );
+        if bailed {
+            // Not a new entry point: the block of the module continues here
+            profiler::stat_increment(stat::JIT_BAIL);
+        }
+        else {
+            jit::jit_increase_hotness_and_maybe_compile(
+                initial_eip,
+                phys_addr,
+                get_seg_cs() as u32,
+                initial_state_flags,
+                *instruction_counter - initial_instruction_counter,
+            );
+        }
 
         profiler::stat_increment_by(
             stat::RUN_INTERPRETED_STEPS,

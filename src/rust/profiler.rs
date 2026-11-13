@@ -164,6 +164,7 @@ pub enum stat {
     MARKS_EVICTED,
     COMPILE_COLD_EDGE,
     COMPILE_WITHOUT_MARKS,
+    JIT_BAIL,
 }
 
 #[allow(non_upper_case_globals)]
