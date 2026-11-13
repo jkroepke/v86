@@ -435,7 +435,7 @@ function gen_table()
             "// instruction of the interpreter costs no call and no return. Returns how many",
             "// instructions ran.",
             "pub unsafe fn run(mut opcode: u32) -> u32 {",
-            "let mut state = interpreter_loop_start();",
+            "let mut state = interpreter_loop_start(opcode);",
             "loop {",
             "'instruction: {",
             table,

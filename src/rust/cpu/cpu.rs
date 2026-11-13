@@ -300,12 +300,15 @@ pub static mut cpuid_level: u32 = 0x16;
 // For measurements, and for an embedder that must switch an extension off
 pub static mut cpuid_hidden: [i32; 2] = [0; 2];
 
-// Not zero when the interpreter must leave its loop after the current instruction
-pub static mut jit_block_boundary: u8 = 0;
+// The code page of the block that the interpreter runs (the same as last_virt_eip), or one of
+// the two values below, which are no page: then the loop of the interpreter stops after the
+// current instruction. So the loop needs one comparison per instruction for "the block has
+// ended" and "the next instruction is in another page".
+pub static mut interpreter_page: i32 = BLOCK_END;
 // The instruction ended the block (a jump, for example)
-pub const BLOCK_BOUNDARY: u8 = 1;
+pub const BLOCK_END: i32 = 1;
 // Only one instruction is wanted (the instruction after a prefix)
-pub const BLOCK_SINGLE_INSTRUCTION: u8 = 2;
+pub const BLOCK_SINGLE_INSTRUCTION: i32 = 2;
 
 const TSC_ENABLE_IMPRECISE_BROWSER_WORKAROUND: bool = true;
 
@@ -1906,7 +1909,7 @@ pub unsafe fn do_task_switch(selector: i32, error_code: Option<i32>, source: Tas
     update_state_flags();
 }
 
-pub unsafe fn after_block_boundary() { jit_block_boundary |= BLOCK_BOUNDARY; }
+pub unsafe fn after_block_boundary() { interpreter_page = BLOCK_END; }
 
 #[no_mangle]
 pub fn track_jit_exit(phys_addr: u32) {
@@ -2346,7 +2349,7 @@ pub unsafe fn do_page_walk(
 pub unsafe fn full_clear_tlb() {
     profiler::stat_increment(stat::FULL_CLEAR_TLB);
     // clear tlb including global pages
-    *last_virt_eip = -1;
+    invalidate_eip_translation();
     for i in 0..valid_tlb_entries_count {
         let page = valid_tlb_entries[i as usize];
         clear_tlb_code(page);
@@ -2366,7 +2369,7 @@ pub unsafe fn full_clear_tlb() {
 pub unsafe fn clear_tlb() {
     profiler::stat_increment(stat::CLEAR_TLB);
     // clear tlb excluding global pages
-    *last_virt_eip = -1;
+    invalidate_eip_translation();
     let mut global_page_offset = 0;
     for i in 0..valid_tlb_entries_count {
         let page = valid_tlb_entries[i as usize];
@@ -2612,6 +2615,10 @@ unsafe fn read_imm8_slow() -> i64 {
         Ok(phys) => {
             *eip_phys = (phys ^ eip as u32) as i32;
             *last_virt_eip = eip & !0xFFF;
+            // The instruction goes on in another page, or the translation was dropped in the
+            // middle of the instruction: the block of the interpreter ends after it (the loop
+            // relies on the translation of the page of its block)
+            interpreter_page = BLOCK_END;
         },
     }
     dbg_assert!(!memory::in_mapped_range((*eip_phys ^ eip) as u32));
@@ -3086,11 +3093,23 @@ pub unsafe fn load_pdpte(cr3: i32) {
     }
 }
 
-pub unsafe fn cpl_changed() { *last_virt_eip = -1 }
+pub unsafe fn cpl_changed() { invalidate_eip_translation() }
+
+// The translation of the code page (eip_phys, last_virt_eip) is not valid anymore. The loop of
+// the interpreter does not check last_virt_eip for every instruction: its block ends here, and
+// the next block translates again.
+#[inline(always)]
+pub unsafe fn invalidate_eip_translation() {
+    *last_virt_eip = -1;
+    interpreter_page = BLOCK_END;
+}
 
 pub unsafe fn update_cs_size(new_size: bool) {
     if *is_32 != new_size {
         *is_32 = new_size;
+        // the loop of the interpreter keeps the operand size of its block (InterpreterLoop):
+        // the block ends here, also when an exception changed the size
+        interpreter_page = BLOCK_END;
     }
 }
 
@@ -3289,29 +3308,35 @@ unsafe fn modrm_resolve_slow(modrm_byte: i32) -> i64 {
     pack_result(if is_asize_32() { resolve_modrm32(modrm_byte) } else { resolve_modrm16(modrm_byte) })
 }
 
-// Runs one instruction: the instruction after a prefix. gen::interpreter::run is a loop, the flag
-// makes it stop after the first instruction. A prefix can follow a prefix, so the flag is put back
-// to what it was and not cleared.
+// Runs one instruction: the instruction after a prefix. gen::interpreter::run is a loop, the mark
+// in interpreter_page makes it stop after the first instruction. A prefix can follow a prefix, so
+// the page is put back to what it was, unless the block has ended before or in the instruction.
 pub unsafe fn run_instruction(opcode: i32) {
-    let saved = jit_block_boundary & BLOCK_SINGLE_INSTRUCTION;
-    jit_block_boundary |= BLOCK_SINGLE_INSTRUCTION;
+    let saved = interpreter_page;
+    if saved != BLOCK_END {
+        interpreter_page = BLOCK_SINGLE_INSTRUCTION;
+    }
     gen::interpreter::run(opcode as u32);
-    jit_block_boundary = jit_block_boundary & !BLOCK_SINGLE_INSTRUCTION | saved;
+    if interpreter_page == BLOCK_SINGLE_INSTRUCTION {
+        interpreter_page = saved;
+    }
 }
 
 pub struct InterpreterLoop {
-    // the page of the block
-    page: i32,
     // instructions that ran
     pub count: u32,
+    // bit 8 of the opcodes of the block: the operand size. It changes only at the end of a block
+    // (far jumps, iret, ...), so the loop does not load is_32 for every instruction. A prefix
+    // runs its instruction in a nested call with its own bit.
+    size_bit: u32,
 }
 
 #[inline(always)]
-pub unsafe fn interpreter_loop_start() -> InterpreterLoop {
+pub unsafe fn interpreter_loop_start(opcode: u32) -> InterpreterLoop {
     // the caller has read the opcode
     InterpreterLoop {
-        page: *instruction_pointer - 1 & !0xFFF,
         count: 0,
+        size_bit: opcode & 0x100,
     }
 }
 
@@ -3319,12 +3344,12 @@ pub unsafe fn interpreter_loop_start() -> InterpreterLoop {
 // or None at the end of the block
 #[inline(always)]
 pub unsafe fn interpreter_loop_next(state: &mut InterpreterLoop) -> Option<u32> {
-    dbg_assert!(*prefixes == 0 || jit_block_boundary & BLOCK_SINGLE_INSTRUCTION != 0);
+    dbg_assert!(*prefixes == 0 || interpreter_page & !0xFFF == 0);
     state.count += 1;
     let eip = *instruction_pointer;
 
     // A block ends when the instruction says so and when it leaves the page
-    if jit_block_boundary != 0 || (state.page ^ eip) as u32 >= 0x1000 {
+    if eip & !0xFFF != interpreter_page {
         return None;
     }
     // Limit the number of iterations, as jumps within the same page are not counted as
@@ -3335,12 +3360,9 @@ pub unsafe fn interpreter_loop_next(state: &mut InterpreterLoop) -> Option<u32> 
     }
 
     *previous_ip = eip;
-    if state.page != *last_virt_eip {
-        // an instruction that crossed the end of the page and jumped back
-        if !interpreter_loop_translate(eip) {
-            return None;
-        }
-    }
+    // Whatever changes the translation of the code page ends the block (interpreter_page):
+    // an instruction that crosses the end of the page, a flushed TLB, a new privilege level
+    dbg_assert!(interpreter_page == *last_virt_eip);
     let phys_addr = (*eip_phys ^ eip) as u32;
     dbg_assert!(!memory::in_mapped_range(phys_addr));
 
@@ -3353,7 +3375,8 @@ pub unsafe fn interpreter_loop_next(state: &mut InterpreterLoop) -> Option<u32> 
 
     record_opstat_interpreted(phys_addr);
     *instruction_pointer = eip + 1;
-    Some(*memory::mem8.offset(phys_addr as isize) as u32 | (*is_32 as u32) << 8)
+    dbg_assert!(state.size_bit == (*is_32 as u32) << 8);
+    Some(*memory::mem8.offset(phys_addr as isize) as u32 | state.size_bit)
 }
 
 // profiler build: count the opcode of an instruction that the interpreter is about to run
@@ -3370,18 +3393,6 @@ unsafe fn record_opstat_interpreted(phys_addr: u32) {
     }
 }
 
-#[cold]
-#[inline(never)]
-unsafe fn interpreter_loop_translate(eip: i32) -> bool {
-    match translate_address_fetch(eip) {
-        Ok(phys) => {
-            *eip_phys = (phys ^ eip as u32) as i32;
-            *last_virt_eip = eip & !0xFFF;
-            true
-        },
-        Err(()) => false,
-    }
-}
 pub unsafe fn run_instruction0f_16(opcode: i32) { gen::interpreter0f::run(opcode as u32) }
 pub unsafe fn run_instruction0f_32(opcode: i32) { gen::interpreter0f::run(opcode as u32 | 0x100) }
 
@@ -3562,7 +3573,8 @@ unsafe fn jit_run_interpreted(phys_addr: u32) {
         }
     }
 
-    jit_block_boundary = 0;
+    interpreter_page = *last_virt_eip;
+    dbg_assert!(interpreter_page == *instruction_pointer & !0xFFF);
     record_opstat_interpreted(phys_addr);
     let opcode = *memory::mem8.offset(phys_addr as isize) as u32;
     *instruction_pointer += 1;
@@ -4818,7 +4830,7 @@ pub unsafe fn invlpg(addr: i32) {
     // This however means that valid_tlb_entries can contain some invalid entries
     clear_tlb_code(page);
     tlb_data[page as usize] = 0;
-    *last_virt_eip = -1;
+    invalidate_eip_translation();
 }
 
 #[no_mangle]
