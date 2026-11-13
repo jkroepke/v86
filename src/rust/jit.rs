@@ -76,6 +76,31 @@ pub static mut MAX_EXTRA_BASIC_BLOCKS: u32 = 250;
 
 pub static mut JIT_THRESHOLD: u32 = 200 * 1000;
 
+// When a module exits to code in another module, jump directly into that module with a wasm
+// tail call (return_call_indirect) instead of returning to the main loop. Must only be enabled
+// when the browser supports tail calls (checked in cpu.js), otherwise generated modules fail to
+// compile
+pub static mut JIT_CHAINING: bool = false;
+
+// Exits from a module to code in another module are sampled. When one exit page jumps to one
+// target often, the target becomes a speculated target of that page: modules that contain the page
+// also contain the code at the target (as a guest page, see JitState::speculated_targets), and
+// jump there directly instead of leaving the module. This helps when code jumps back and forth
+// between pages, for example calls through the PLT of a library into another library
+static mut JIT_SPECULATE: bool = true;
+// one in this many exits is sampled
+const EXIT_SAMPLE_INTERVAL: u32 = 1024;
+// number of samples of one (exit page, target) pair before the target is speculated
+static mut EXIT_SAMPLE_THRESHOLD: u32 = 256;
+const MAX_SPECULATED_TARGETS_PER_PAGE: usize = 4;
+// maximum number of pages per module that are only included for speculated targets
+static mut MAX_GUEST_PAGES: u32 = 2;
+// maximum number of speculated targets that are checked in the indirect jump code of a module
+const MAX_GUEST_ENTRIES_CHECKED: usize = 8;
+
+// decremented by generated code on each exit, which calls jit_sample_exit when it reaches 0
+pub static mut JIT_EXIT_SAMPLE_COUNTDOWN: u32 = EXIT_SAMPLE_INTERVAL;
+
 // less branches will generate if-else, more will generate brtable
 pub const BRTABLE_CUTOFF: usize = 10;
 
@@ -123,8 +148,22 @@ struct PageInfo {
 }
 
 enum CompilingPageState {
-    Compiling { pages: HashMap<Page, PageInfo> },
+    Compiling {
+        pages: HashMap<Page, PageInfo>,
+        // pages that are compiled into the module, but don't use it as their entry (speculated
+        // targets). The module is a hidden module of these pages
+        guest_pages: Vec<Page>,
+    },
     CompilingWritten,
+}
+
+struct PendingRecompile {
+    wasm_table_index: WasmTableIndex,
+    virt_addr: i32,
+    phys_addr: u32,
+    cs_offset: u32,
+    state_flags: CachedStateFlags,
+    attempts: u32,
 }
 
 struct JitState {
@@ -138,6 +177,16 @@ struct JitState {
     pages: HashMap<Page, PageInfo>,
     wasm_table_index_free_list: Vec<WasmTableIndex>,
     compiling: Option<(WasmTableIndex, CompilingPageState)>,
+
+    // see JIT_SPECULATE
+    // samples per (physical page of the exit, virtual address of the target)
+    exit_samples: HashMap<(Page, u32), u32>,
+    // per physical page: (virtual, physical) addresses of the targets of exits from this page
+    speculated_targets: HashMap<Page, Vec<(u32, u32)>>,
+    // an entry point of the main page of each module, for recompiling it
+    module_entry: HashMap<WasmTableIndex, (i32, u32, u32)>,
+    pending_recompiles: VecDeque<PendingRecompile>,
+
     #[cfg(debug_assertions)]
     wasm_table_index_to_page: HashMap<WasmTableIndex, HashSet<Page>>,
 }
@@ -148,7 +197,7 @@ fn check_jit_state_invariants(ctx: &mut JitState) {
     }
 
     match &ctx.compiling {
-        Some((_, CompilingPageState::Compiling { pages })) => {
+        Some((_, CompilingPageState::Compiling { pages, .. })) => {
             dbg_assert!(pages.keys().all(|page| ctx.entry_points.contains_key(page)));
         },
         _ => {},
@@ -184,7 +233,7 @@ fn check_jit_state_invariants(ctx: &mut JitState) {
     }
 
     match &ctx.compiling {
-        Some((_, CompilingPageState::Compiling { pages })) => {
+        Some((_, CompilingPageState::Compiling { pages, .. })) => {
             dbg_assert!(pages.keys().all(|page| ctx.entry_points.contains_key(page)));
         },
         _ => {},
@@ -225,6 +274,11 @@ impl JitState {
 
             wasm_table_index_free_list: Vec::from_iter(wasm_table_indices),
             compiling: None,
+
+            exit_samples: HashMap::default(),
+            speculated_targets: HashMap::default(),
+            module_entry: HashMap::default(),
+            pending_recompiles: VecDeque::new(),
 
             #[cfg(debug_assertions)]
             wasm_table_index_to_page: HashMap::default(),
@@ -344,6 +398,8 @@ pub struct JitContext<'a> {
     pub start_of_current_instruction: u32,
     pub exit_with_fault_label: Label,
     pub exit_label: Label,
+    // like exit_label, but the next module may be entered directly (see gen_chain)
+    pub chain_label: Label,
     pub current_instruction: Instruction,
     pub previous_instruction: Instruction,
     pub gs_base: Option<WasmLocal>,
@@ -430,20 +486,26 @@ pub fn jit_find_cache_entry_in_page(
     return -1;
 }
 
+struct FindBasicBlocks {
+    pages: HashSet<Page>,
+    page_blacklist: HashSet<Page>,
+    // pages that are only included for speculated targets (see JIT_SPECULATE)
+    guest_pages: HashSet<Page>,
+    max_pages: u32,
+    max_guest_pages: u32,
+    // compile these pages even if they have no new entry points (recompile for speculated targets)
+    force_pages: HashSet<Page>,
+    marked_as_entry: HashSet<i32>,
+    to_visit_stack: Vec<i32>,
+}
+
 fn jit_find_basic_blocks(
     ctx: &mut JitState,
     entry_points: HashSet<i32>,
     cpu: CpuContext,
-) -> Vec<BasicBlock> {
-    fn follow_jump(
-        virt_target: i32,
-        ctx: &mut JitState,
-        pages: &mut HashSet<Page>,
-        page_blacklist: &mut HashSet<Page>,
-        max_pages: u32,
-        marked_as_entry: &mut HashSet<i32>,
-        to_visit_stack: &mut Vec<i32>,
-    ) -> Option<u32> {
+    force_pages: HashSet<Page>,
+) -> (Vec<BasicBlock>, HashSet<Page>) {
+    fn follow_jump(virt_target: i32, ctx: &mut JitState, v: &mut FindBasicBlocks) -> Option<u32> {
         if is_near_end_of_page(virt_target as u32) {
             return None;
         }
@@ -457,13 +519,14 @@ fn jit_find_basic_blocks(
 
         let phys_page = Page::page_of(phys_target);
 
-        if !pages.contains(&phys_page) && pages.len() as u32 == max_pages
-            || page_blacklist.contains(&phys_page)
+        if !v.pages.contains(&phys_page)
+            && (v.pages.len() - v.guest_pages.len()) as u32 >= v.max_pages
+            || v.page_blacklist.contains(&phys_page)
         {
             return None;
         }
 
-        if !pages.contains(&phys_page) {
+        if !v.pages.contains(&phys_page) {
             // page seen for the first time, handle entry points
             if let Some((hotness, entry_points)) = ctx.entry_points.get_mut(&phys_page) {
                 let existing_entry_points = match ctx.pages.get(&phys_page) {
@@ -473,67 +536,101 @@ fn jit_find_basic_blocks(
                     None => HashSet::default(),
                 };
 
-                if entry_points
-                    .iter()
-                    .all(|entry_point| existing_entry_points.contains(entry_point))
+                let force = v.force_pages.contains(&phys_page);
+
+                if !force
+                    && entry_points
+                        .iter()
+                        .all(|entry_point| existing_entry_points.contains(entry_point))
                 {
-                    page_blacklist.insert(phys_page);
+                    v.page_blacklist.insert(phys_page);
                     return None;
                 }
-
-                // XXX: Remove this paragraph
-                //let old_length = entry_points.len();
-                //entry_points.extend(existing_entry_points);
-                //dbg_assert!(
-                //    entry_points.union(&existing_entry_points).count() == entry_points.len()
-                //);
 
                 *hotness = 0;
 
                 for &addr_low in entry_points.iter() {
                     let addr = virt_target & !0xFFF | addr_low as i32;
-                    to_visit_stack.push(addr);
-                    marked_as_entry.insert(addr);
+                    v.to_visit_stack.push(addr);
+                    v.marked_as_entry.insert(addr);
+                }
+                if force {
+                    // keep the entry points of the module that is replaced
+                    for &addr_low in existing_entry_points.iter() {
+                        let addr = virt_target & !0xFFF | addr_low as i32;
+                        v.to_visit_stack.push(addr);
+                        v.marked_as_entry.insert(addr);
+                    }
                 }
             }
             else {
                 // no entry points: ignore this page?
-                page_blacklist.insert(phys_page);
+                v.page_blacklist.insert(phys_page);
                 return None;
             }
 
-            pages.insert(phys_page);
-            dbg_assert!(pages.len() as u32 <= max_pages);
+            v.pages.insert(phys_page);
+            add_speculated_targets(phys_page, ctx, v);
         }
 
-        to_visit_stack.push(virt_target);
+        v.to_visit_stack.push(virt_target);
         Some(phys_target)
     }
 
-    let mut to_visit_stack: Vec<i32> = Vec::new();
-    let mut marked_as_entry: HashSet<i32> = HashSet::default();
-    let mut basic_blocks: BTreeMap<u32, BasicBlock> = BTreeMap::new();
-    let mut pages: HashSet<Page> = HashSet::default();
-    let mut page_blacklist = HashSet::default();
-
-    // 16-bit doesn't work correctly, most likely due to instruction pointer wrap-around
-    let max_pages = if cpu.state_flags.is_32() { unsafe { MAX_PAGES } } else { 1 };
-
-    for virt_addr in entry_points {
-        let ok = follow_jump(
-            virt_addr,
-            ctx,
-            &mut pages,
-            &mut page_blacklist,
-            max_pages,
-            &mut marked_as_entry,
-            &mut to_visit_stack,
-        );
-        dbg_assert!(ok.is_some());
-        dbg_assert!(marked_as_entry.contains(&virt_addr));
+    fn add_speculated_targets(page: Page, ctx: &JitState, v: &mut FindBasicBlocks) {
+        if !unsafe { JIT_SPECULATE } {
+            return;
+        }
+        let targets = match ctx.speculated_targets.get(&page) {
+            Some(targets) => targets,
+            None => return,
+        };
+        for &(virt, phys) in targets {
+            let target_page = Page::page_of(phys);
+            if is_near_end_of_page(phys)
+                || cpu::translate_address_read_no_side_effects(virt as i32) != Ok(phys)
+                // only pages with code: the module needs to be invalidated together with the code
+                // of the page (as a hidden module of the page)
+                || !ctx.pages.contains_key(&target_page)
+            {
+                continue;
+            }
+            if !v.pages.contains(&target_page) {
+                if v.guest_pages.len() as u32 >= v.max_guest_pages {
+                    continue;
+                }
+                v.pages.insert(target_page);
+                v.guest_pages.insert(target_page);
+                v.page_blacklist.remove(&target_page);
+                add_speculated_targets(target_page, ctx, v);
+            }
+            v.marked_as_entry.insert(virt as i32);
+            v.to_visit_stack.push(virt as i32);
+        }
     }
 
-    while let Some(to_visit) = to_visit_stack.pop() {
+    let mut basic_blocks: BTreeMap<u32, BasicBlock> = BTreeMap::new();
+
+    // 16-bit doesn't work correctly, most likely due to instruction pointer wrap-around
+    let is_32 = cpu.state_flags.is_32();
+    let v = &mut FindBasicBlocks {
+        pages: HashSet::default(),
+        page_blacklist: HashSet::default(),
+        guest_pages: HashSet::default(),
+        max_pages: if is_32 { unsafe { MAX_PAGES } } else { 1 },
+        max_guest_pages: if is_32 { unsafe { MAX_GUEST_PAGES } } else { 0 },
+        force_pages,
+        marked_as_entry: HashSet::default(),
+        to_visit_stack: Vec::new(),
+    };
+
+    for virt_addr in entry_points {
+        let ok = follow_jump(virt_addr, ctx, v);
+        dbg_assert!(ok.is_some());
+        dbg_assert!(v.marked_as_entry.contains(&virt_addr));
+    }
+
+    while let Some(to_visit) = v.to_visit_stack.pop() {
         let phys_addr = match cpu::translate_address_read_no_side_effects(to_visit) {
             Err(()) => {
                 dbg_log!("Not analysing {:x} (page not mapped)", to_visit);
@@ -594,8 +691,8 @@ fn jit_find_basic_blocks(
                     if current_block.has_sti {
                         // Convert next instruction after STI (i.e., the current instruction) into block boundary
 
-                        marked_as_entry.insert(current_virt_addr);
-                        to_visit_stack.push(current_virt_addr);
+                        v.marked_as_entry.insert(current_virt_addr);
+                        v.to_visit_stack.push(current_virt_addr);
 
                         break;
                     }
@@ -640,7 +737,7 @@ fn jit_find_basic_blocks(
                     };
 
                     dbg_assert!(has_next_instruction);
-                    to_visit_stack.push(current_virt_addr);
+                    v.to_visit_stack.push(current_virt_addr);
 
                     let next_block_addr = if is_near_end_of_page(current_address) {
                         None
@@ -651,15 +748,7 @@ fn jit_find_basic_blocks(
 
                     current_block.ty = BasicBlockType::ConditionalJump {
                         next_block_addr,
-                        next_block_branch_taken_addr: follow_jump(
-                            jump_target,
-                            ctx,
-                            &mut pages,
-                            &mut page_blacklist,
-                            max_pages,
-                            &mut marked_as_entry,
-                            &mut to_visit_stack,
-                        ),
+                        next_block_branch_taken_addr: follow_jump(jump_target, ctx, v),
                         condition,
                         jump_offset: offset,
                         jump_offset_is_32: is_32,
@@ -685,20 +774,12 @@ fn jit_find_basic_blocks(
 
                     if has_next_instruction {
                         // Execution will eventually come back to the next instruction (CALL)
-                        marked_as_entry.insert(current_virt_addr);
-                        to_visit_stack.push(current_virt_addr);
+                        v.marked_as_entry.insert(current_virt_addr);
+                        v.to_visit_stack.push(current_virt_addr);
                     }
 
                     current_block.ty = BasicBlockType::Normal {
-                        next_block_addr: follow_jump(
-                            jump_target,
-                            ctx,
-                            &mut pages,
-                            &mut page_blacklist,
-                            max_pages,
-                            &mut marked_as_entry,
-                            &mut to_visit_stack,
-                        ),
+                        next_block_addr: follow_jump(jump_target, ctx, v),
                         jump_offset: offset,
                         jump_offset_is_32: is_32,
                     };
@@ -713,8 +794,8 @@ fn jit_find_basic_blocks(
                         // to the next instruction. Create a new basic block
                         // starting at the next instruction and register it as an
                         // entry point
-                        marked_as_entry.insert(current_virt_addr);
-                        to_visit_stack.push(current_virt_addr);
+                        v.marked_as_entry.insert(current_virt_addr);
+                        v.to_visit_stack.push(current_virt_addr);
                     }
 
                     if analysis.absolute_jump {
@@ -745,7 +826,7 @@ fn jit_find_basic_blocks(
         if let Some(previous_block) = previous_block {
             if current_block.addr < previous_block.end_addr {
                 // If this block overlaps with the previous block, re-analyze the previous block
-                to_visit_stack.push(previous_block.virt_addr);
+                v.to_visit_stack.push(previous_block.virt_addr);
 
                 let addr = previous_block.addr;
                 let old_block = basic_blocks.remove(&addr);
@@ -763,10 +844,10 @@ fn jit_find_basic_blocks(
         basic_blocks.insert(current_block.addr, current_block);
     }
 
-    dbg_assert!(pages.len() as u32 <= max_pages);
+    dbg_assert!((v.pages.len() - v.guest_pages.len()) as u32 <= v.max_pages);
 
     for block in basic_blocks.values_mut() {
-        if marked_as_entry.contains(&block.virt_addr) {
+        if v.marked_as_entry.contains(&block.virt_addr) {
             block.is_entry_block = true;
         }
     }
@@ -799,6 +880,7 @@ fn jit_find_basic_blocks(
     }
 
     let basic_blocks: Vec<BasicBlock> = basic_blocks.into_iter().map(|(_, block)| block).collect();
+    let guest_pages = mem::take(&mut v.guest_pages);
 
     for i in 0..basic_blocks.len() - 1 {
         let next_block_addr = basic_blocks[i + 1].addr;
@@ -819,7 +901,7 @@ fn jit_find_basic_blocks(
         }
     }
 
-    basic_blocks
+    (basic_blocks, guest_pages)
 }
 
 #[no_mangle]
@@ -846,6 +928,7 @@ fn jit_analyze_and_generate(
     phys_entry_point: u32,
     cs_offset: u32,
     state_flags: CachedStateFlags,
+    force_pages: HashSet<Page>,
 ) {
     let page = Page::page_of(phys_entry_point);
 
@@ -861,9 +944,10 @@ fn jit_analyze_and_generate(
         None => HashSet::default(),
     };
 
-    if entry_points
-        .iter()
-        .all(|entry_point| existing_entry_points.contains(entry_point))
+    if !force_pages.contains(&page)
+        && entry_points
+            .iter()
+            .all(|entry_point| existing_entry_points.contains(entry_point))
     {
         profiler::stat_increment(stat::COMPILE_SKIPPED_NO_NEW_ENTRY_POINTS);
         return;
@@ -897,7 +981,12 @@ fn jit_analyze_and_generate(
         .iter()
         .map(|e| virt_page.to_address() as i32 | *e as i32)
         .collect();
-    let basic_blocks = jit_find_basic_blocks(ctx, entry_points, cpu.clone());
+    let (basic_blocks, guest_pages) = jit_find_basic_blocks(
+        ctx,
+        entry_points,
+        cpu.clone(),
+        force_pages,
+    );
 
     let mut pages = HashSet::default();
 
@@ -905,6 +994,35 @@ fn jit_analyze_and_generate(
         // Remove this assertion once page-crossing jit is enabled
         dbg_assert!(Page::page_of(b.addr) == Page::page_of(b.end_addr));
         pages.insert(Page::page_of(b.addr));
+    }
+
+    let guest_pages: Vec<Page> = guest_pages
+        .into_iter()
+        .filter(|p| pages.contains(p))
+        .collect();
+
+    // Indirect jumps to these are checked in the generated code, as the module isn't found via
+    // tlb_code for guest pages. Speculated targets first, then other entries (e.g. after calls)
+    let mut guest_entries: Vec<(u32, u32)> = Vec::new();
+    if !guest_pages.is_empty() {
+        for p in &pages {
+            for &(virt, phys) in ctx.speculated_targets.get(p).into_iter().flatten() {
+                if guest_pages.contains(&Page::page_of(phys))
+                    && !guest_entries.contains(&(virt, phys))
+                {
+                    guest_entries.push((virt, phys));
+                }
+            }
+        }
+        for b in basic_blocks.iter() {
+            if b.is_entry_block
+                && guest_pages.contains(&Page::page_of(b.addr))
+                && !guest_entries.contains(&(b.virt_addr as u32, b.addr))
+            {
+                guest_entries.push((b.virt_addr as u32, b.addr));
+            }
+        }
+        guest_entries.truncate(MAX_GUEST_ENTRIES_CHECKED);
     }
 
     let print = false;
@@ -1013,7 +1131,7 @@ fn jit_analyze_and_generate(
     dbg_assert!(wasm_table_index != WasmTableIndex(0));
 
     dbg_assert!(!pages.is_empty());
-    dbg_assert!(pages.len() <= unsafe { MAX_PAGES } as usize);
+    dbg_assert!(pages.len() - guest_pages.len() <= unsafe { MAX_PAGES } as usize);
 
     let basic_block_by_addr: HashMap<u32, BasicBlock> =
         basic_blocks.into_iter().map(|b| (b.addr, b)).collect();
@@ -1025,11 +1143,15 @@ fn jit_analyze_and_generate(
         &mut ctx.wasm_builder,
         wasm_table_index,
         state_flags,
+        &guest_entries,
     );
     dbg_assert!(!entries.is_empty());
 
     let mut page_info = HashMap::default();
     for &p in &pages {
+        if guest_pages.contains(&p) {
+            continue;
+        }
         page_info.entry(p).or_insert_with(|| PageInfo {
             wasm_table_index,
             state_flags,
@@ -1041,8 +1163,12 @@ fn jit_analyze_and_generate(
             .or_insert_with(|| (0, HashSet::default()));
     }
     for &(addr, state) in &entries {
-        let code = page_info.get_mut(&Page::page_of(addr)).unwrap();
-        code.entry_points.push((addr as u16 & 0xFFF, state));
+        if let Some(code) = page_info.get_mut(&Page::page_of(addr)) {
+            code.entry_points.push((addr as u16 & 0xFFF, state));
+        }
+        else {
+            dbg_assert!(guest_pages.contains(&Page::page_of(addr)));
+        }
     }
 
     profiler::stat_increment_by(
@@ -1056,8 +1182,16 @@ fn jit_analyze_and_generate(
     dbg_assert!(ctx.compiling.is_none());
     ctx.compiling = Some((
         wasm_table_index,
-        CompilingPageState::Compiling { pages: page_info },
+        CompilingPageState::Compiling {
+            pages: page_info,
+            guest_pages,
+        },
     ));
+
+    ctx.module_entry.insert(
+        wasm_table_index,
+        (virt_entry_point, phys_entry_point, cs_offset),
+    );
 
     let phys_addr = page.to_address();
 
@@ -1101,12 +1235,16 @@ pub fn codegen_finalize_finished(
             check_jit_state_invariants(&mut ctx);
             return;
         },
-        Some((in_progress_wasm_table_index, CompilingPageState::Compiling { pages })) => {
+        Some((
+            in_progress_wasm_table_index,
+            CompilingPageState::Compiling { pages, guest_pages },
+        )) => {
             dbg_assert!(wasm_table_index == in_progress_wasm_table_index);
             dbg_assert!(!pages.is_empty());
-            pages
+            (pages, guest_pages)
         },
     };
+    let (pages, guest_pages) = pages;
 
     let compiled_pages: HashSet<Page> = pages.keys().copied().collect();
 
@@ -1128,6 +1266,25 @@ pub fn codegen_finalize_finished(
             check_for_unused_wasm_table_index.insert(old_entry.wasm_table_index);
         }
         ctx.pages.insert(page, info);
+    }
+
+    for page in guest_pages {
+        // The module must be freed together with the code of the guest page (jit_dirty_page), so
+        // it becomes a hidden module of the page. Guest pages that were written while compiling
+        // have marked the module as CompilingWritten
+        match ctx.pages.get_mut(&page) {
+            Some(info) => info.hidden_wasm_table_indices.push(wasm_table_index),
+            None => {
+                // the module of the page was freed (without a write to the page)
+                dbg_assert!(ctx.entry_points.contains_key(&page));
+                ctx.pages.insert(page, PageInfo {
+                    wasm_table_index,
+                    hidden_wasm_table_indices: Vec::new(),
+                    entry_points: Vec::new(),
+                    state_flags,
+                });
+            },
+        }
     }
 
     for i in 0..unsafe { cpu::valid_tlb_entries_count } {
@@ -1216,6 +1373,7 @@ fn jit_generate_module(
     builder: &mut WasmBuilder,
     wasm_table_index: WasmTableIndex,
     state_flags: CachedStateFlags,
+    guest_entries: &[(u32, u32)],
 ) -> Vec<(u32, u16)> {
     builder.reset();
 
@@ -1229,7 +1387,24 @@ fn jit_generate_module(
     builder.const_i32(0);
     let instruction_counter = builder.set_new_local();
 
+    // virtual address of the page of the last exit to chain_label, for jit_sample_exit
+    let speculate = unsafe { JIT_SPECULATE };
+    let exit_page = if speculate {
+        builder.const_i32(0);
+        Some(builder.set_new_local())
+    }
+    else {
+        None
+    };
+    let set_exit_page = |builder: &mut WasmBuilder, addr: i32| {
+        if let Some(exit_page) = &exit_page {
+            builder.const_i32(addr & !0xFFF);
+            builder.set_local(exit_page);
+        }
+    };
+
     let exit_label = builder.block_void();
+    let chain_label = builder.block_void();
     let exit_with_fault_label = builder.block_void();
     let main_loop_label = builder.loop_void();
     if unsafe { JIT_USE_LOOP_SAFETY } {
@@ -1246,6 +1421,7 @@ fn jit_generate_module(
             builder.br_if(exit_label);
         }
     }
+    let indirect_jump_label = builder.block_void();
     let brtable_default = builder.block_void();
 
     let ctx = &mut JitContext {
@@ -1255,6 +1431,7 @@ fn jit_generate_module(
         start_of_current_instruction: 0,
         exit_with_fault_label,
         exit_label,
+        chain_label,
         current_instruction: Instruction::Other,
         previous_instruction: Instruction::Other,
         gs_base: None,
@@ -1397,19 +1574,11 @@ fn jit_generate_module(
                         ctx.builder.br(ctx.exit_label);
                     },
                     BasicBlockType::AbsoluteEip => {
-                        // Check if we can stay in this module, if not exit
-                        codegen::gen_get_eip(ctx.builder);
-                        ctx.builder.const_i32(wasm_table_index.to_u16() as i32);
-                        ctx.builder.const_i32(state_flags.to_u32() as i32);
-                        ctx.builder.call_fn3_ret("jit_find_cache_entry_in_page");
-                        ctx.builder.tee_local(target_block);
-                        ctx.builder.const_i32(0);
-                        ctx.builder.ge_i32();
-                        // TODO: Could make this unconditional by including exit_label in the main br_table
-                        ctx.builder.br_if(main_loop_label);
-
+                        // Check if we can stay in this module, if not exit (shared code at
+                        // the end of the main loop)
                         codegen::gen_debug_track_jit_exit(ctx.builder, block.last_instruction_addr);
-                        ctx.builder.br(ctx.exit_label);
+                        set_exit_page(ctx.builder, block.virt_addr);
+                        ctx.builder.br(indirect_jump_label);
                     },
                     &BasicBlockType::Normal {
                         next_block_addr: None,
@@ -1433,7 +1602,8 @@ fn jit_generate_module(
 
                         codegen::gen_debug_track_jit_exit(ctx.builder, block.last_instruction_addr);
                         codegen::gen_profiler_stat_increment(ctx.builder, stat::DIRECT_EXIT);
-                        ctx.builder.br(ctx.exit_label);
+                        set_exit_page(ctx.builder, block.virt_addr);
+                        ctx.builder.br(ctx.chain_label);
                     },
                     &BasicBlockType::Normal {
                         next_block_addr: Some(next_block_addr),
@@ -1737,7 +1907,8 @@ fn jit_generate_module(
                                     ctx.builder,
                                     stat::CONDITIONAL_JUMP_EXIT,
                                 );
-                                ctx.builder.br(ctx.exit_label);
+                                set_exit_page(ctx.builder, block.virt_addr);
+                                ctx.builder.br(ctx.chain_label);
 
                                 if is_first {
                                     ctx.builder.block_end();
@@ -2016,6 +2187,56 @@ fn jit_generate_module(
         ctx.builder.unreachable();
     }
     {
+        // ret, call r/m, jmp r/m: eip has been set, continue in this module if it has an entry
+        // for eip, otherwise exit
+        ctx.builder.block_end();
+        codegen::gen_profiler_stat_increment(ctx.builder, stat::INDIRECT_JUMP);
+        let target_block = &ctx.builder.arg_local_initial_state.unsafe_clone();
+
+        // Entries in guest pages are not found via tlb_code, compare them directly
+        for &(virt, phys) in guest_entries {
+            if !entry_blocks.contains(&phys) {
+                continue;
+            }
+            let index = *index_for_addr.get(&phys).unwrap();
+            codegen::gen_get_eip(ctx.builder);
+            ctx.builder.const_i32(virt as i32);
+            ctx.builder.eq_i32();
+            ctx.builder.if_void();
+            {
+                // check that the page is still mapped to the same physical page
+                codegen::gen_get_eip(ctx.builder);
+                let address_local = ctx.builder.set_new_local();
+                codegen::gen_get_phys_eip_plus_mem(ctx, &address_local);
+                ctx.builder.free_local(address_local);
+                ctx.builder
+                    .const_i32(phys as i32 + unsafe { memory::mem8 } as i32);
+                ctx.builder.eq_i32();
+                ctx.builder.if_void();
+                codegen::gen_profiler_stat_increment(ctx.builder, stat::INDIRECT_JUMP_GUEST);
+                ctx.builder.const_i32(index as i32);
+                ctx.builder.set_local(target_block);
+                ctx.builder.br(main_loop_label);
+                ctx.builder.block_end();
+            }
+            ctx.builder.block_end();
+        }
+
+        let miss = ctx.builder.block_void();
+        let code = gen_lookup_entry(
+            ctx.builder,
+            miss,
+            target_block,
+            Some(wasm_table_index),
+            Some(state_flags),
+        );
+        ctx.builder.free_local(code);
+        ctx.builder.br(main_loop_label);
+        ctx.builder.block_end();
+        codegen::gen_profiler_stat_increment(ctx.builder, stat::INDIRECT_JUMP_NO_ENTRY);
+        ctx.builder.br(ctx.chain_label);
+    }
+    {
         ctx.builder.block_end(); // main loop
     }
     {
@@ -2024,6 +2245,20 @@ fn jit_generate_module(
         codegen::gen_move_registers_from_locals_to_memory(ctx);
         codegen::gen_fn0_const(ctx.builder, "exit_jit");
         codegen::gen_update_instruction_counter(ctx);
+        ctx.builder.return_();
+    }
+    {
+        // exit to code that is known to be outside of this module (or not compiled yet)
+        ctx.builder.block_end();
+        codegen::gen_move_registers_from_locals_to_memory(ctx);
+        codegen::gen_update_instruction_counter(ctx);
+        if let Some(exit_page) = exit_page {
+            gen_sample_exit(ctx.builder, &exit_page, wasm_table_index);
+            ctx.builder.free_local(exit_page);
+        }
+        if unsafe { JIT_CHAINING } {
+            gen_chain(ctx);
+        }
         ctx.builder.return_();
     }
     {
@@ -2061,6 +2296,129 @@ fn jit_generate_module(
     }
 
     return entries;
+}
+
+// Offsets into cpu::Code, read by generated code
+const CODE_WASM_TABLE_INDEX_OFFSET: u32 = mem::offset_of!(cpu::Code, wasm_table_index) as u32;
+const CODE_STATE_FLAGS_OFFSET: u32 = mem::offset_of!(cpu::Code, state_flags) as u32;
+const CODE_STATE_TABLE_OFFSET: u32 = mem::offset_of!(cpu::Code, state_table) as u32;
+
+/// Generates the lookup of cycle_internal: The entry for eip in tlb_code. Branches to `miss` if
+/// there is none (or if it is in another module than `same_module`). Otherwise sets `state` to the
+/// initial state of the entry and returns a local with the pointer to the cpu::Code
+#[must_use = "local allocated but not used"]
+fn gen_lookup_entry(
+    builder: &mut WasmBuilder,
+    miss: Label,
+    state: &WasmLocal,
+    same_module: Option<WasmTableIndex>,
+    state_flags: Option<CachedStateFlags>,
+) -> WasmLocal {
+    codegen::gen_get_eip(builder);
+    let eip = builder.tee_new_local();
+    builder.const_i32(12);
+    builder.shr_u_i32();
+    builder.const_i32(2);
+    builder.shl_i32();
+    builder.load_aligned_i32(&raw const cpu::tlb_code as u32);
+    let code = builder.tee_new_local();
+    builder.eqz_i32();
+    builder.br_if(miss);
+
+    if let Some(wasm_table_index) = same_module {
+        builder.get_local(&code);
+        builder.load_aligned_u16(CODE_WASM_TABLE_INDEX_OFFSET);
+        builder.const_i32(wasm_table_index.to_u16() as i32);
+        builder.ne_i32();
+        builder.br_if(miss);
+    }
+
+    builder.get_local(&code);
+    builder.load_u8(CODE_STATE_FLAGS_OFFSET);
+    match state_flags {
+        Some(state_flags) => builder.const_i32(state_flags.to_u32() as i32),
+        None => builder.load_fixed_u8(global_pointers::state_flags as u32),
+    }
+    builder.ne_i32();
+    builder.br_if(miss);
+
+    builder.get_local(&code);
+    builder.get_local(&eip);
+    builder.const_i32(0xFFF);
+    builder.and_i32();
+    builder.const_i32(1);
+    builder.shl_i32();
+    builder.add_i32();
+    builder.load_aligned_u16(CODE_STATE_TABLE_OFFSET);
+    builder.tee_local(state);
+    builder.const_i32(u16::MAX as i32);
+    builder.eq_i32();
+    builder.br_if(miss);
+
+    builder.free_local(eip);
+    code
+}
+
+/// Calls jit_sample_exit on every EXIT_SAMPLE_INTERVAL-th exit
+fn gen_sample_exit(builder: &mut WasmBuilder, exit_page: &WasmLocal, wasm_table_index: WasmTableIndex) {
+    let countdown = &raw const JIT_EXIT_SAMPLE_COUNTDOWN as u32;
+    builder.const_i32(countdown as i32);
+    builder.load_fixed_i32(countdown);
+    builder.const_i32(1);
+    builder.sub_i32();
+    let value = builder.tee_new_local();
+    builder.store_aligned_i32(0);
+    builder.get_local(&value);
+    builder.free_local(value);
+    builder.eqz_i32();
+    builder.if_void();
+    builder.get_local(exit_page);
+    builder.const_i32(wasm_table_index.to_u16() as i32);
+    builder.call_fn2("jit_sample_exit");
+    builder.block_end();
+}
+
+/// Called after the registers and the instruction counter have been written back. If eip has an
+/// entry in a compiled module, jump into it with a tail call. This skips the return to
+/// do_many_cycles_native and its lookup. The loop in do_many_cycles_native only checks the
+/// instruction counter and in_hlt (which can't be set by the jumps that get here), and interrupts
+/// are only handled after it, so the same limit on the instruction counter keeps the timing.
+/// Falls through if eip has no entry or the limit is reached
+fn gen_chain(ctx: &mut JitContext) {
+    let builder = &mut *ctx.builder;
+    let miss = builder.block_void();
+
+    // (instruction_counter - jit_chain_end) as i32 >= 0
+    builder.load_fixed_i32(global_pointers::instruction_counter as u32);
+    builder.load_fixed_i32(&raw const cpu::jit_chain_end as u32);
+    builder.sub_i32();
+    builder.const_i32(0);
+    builder.ge_i32();
+    if cfg!(feature = "profiler") {
+        builder.if_void();
+        codegen::gen_profiler_stat_increment(builder, stat::CHAIN_NO_BUDGET);
+        builder.br(miss);
+        builder.block_end();
+    }
+    else {
+        builder.br_if(miss);
+    }
+
+    builder.const_i32(0);
+    let state = builder.set_new_local();
+    let code = gen_lookup_entry(builder, miss, &state, None, None);
+    codegen::gen_profiler_stat_increment(builder, stat::CHAIN);
+    builder.get_local(&state);
+    builder.get_local(&code);
+    builder.load_aligned_u16(CODE_WASM_TABLE_INDEX_OFFSET);
+    builder.const_i32(cpu::WASM_TABLE_OFFSET as i32);
+    builder.add_i32();
+    builder.return_call_indirect_fn1();
+    builder.free_local(code);
+    builder.free_local(state);
+
+    builder.block_end();
+    codegen::gen_profiler_stat_increment(builder, stat::CHAIN_NO_ENTRY);
 }
 
 fn jit_generate_basic_block(ctx: &mut JitContext, block: &BasicBlock) {
@@ -2196,12 +2554,151 @@ pub fn jit_increase_hotness_and_maybe_compile(
         // only try generating if we're in the correct address space
         if cpu::translate_address_read_no_side_effects(virt_address) == Ok(phys_address) {
             *hotness = 0;
-            jit_analyze_and_generate(&mut ctx, virt_address, phys_address, cs_offset, state_flags)
+            jit_analyze_and_generate(
+                &mut ctx,
+                virt_address,
+                phys_address,
+                cs_offset,
+                state_flags,
+                HashSet::default(),
+            )
         }
         else {
             profiler::stat_increment(stat::COMPILE_WRONG_ADDRESS_SPACE);
         }
     }
+}
+
+/// Called by generated code on every EXIT_SAMPLE_INTERVAL-th exit to another module (registers
+/// are written back, eip is the target). Collects pairs of exit pages and targets, see
+/// JIT_SPECULATE
+#[no_mangle]
+pub fn jit_sample_exit(exit_page: u32, wasm_table_index: WasmTableIndex) {
+    unsafe {
+        JIT_EXIT_SAMPLE_COUNTDOWN = EXIT_SAMPLE_INTERVAL;
+    }
+    profiler::stat_increment(stat::EXIT_SAMPLE);
+
+    let target = unsafe { *global_pointers::instruction_pointer } as u32;
+    let state_flags = unsafe { *global_pointers::state_flags };
+
+    // Only targets with code in another module
+    match unsafe { cpu::tlb_code[(target >> 12) as usize] } {
+        None => return,
+        Some(c) => {
+            let c = unsafe { c.as_ref() };
+            if c.state_flags != state_flags
+                || c.wasm_table_index == wasm_table_index
+                || c.state_table[target as usize & 0xFFF] == u16::MAX
+            {
+                return;
+            }
+        },
+    }
+
+    let (exit_phys, target_phys) = match (
+        cpu::translate_address_read_no_side_effects(exit_page as i32),
+        cpu::translate_address_read_no_side_effects(target as i32),
+    ) {
+        (Ok(e), Ok(t)) => (Page::page_of(e), t),
+        _ => return,
+    };
+    if exit_phys == Page::page_of(target_phys) {
+        return;
+    }
+
+    let mut ctx = get_jit_state();
+
+    // The exit page must (still) be part of the module that exits
+    match ctx.pages.get(&exit_phys) {
+        Some(info)
+            if info.wasm_table_index == wasm_table_index
+                || info.hidden_wasm_table_indices.contains(&wasm_table_index) => {},
+        _ => return,
+    }
+
+    let samples = ctx.exit_samples.entry((exit_phys, target)).or_insert(0);
+    *samples += 1;
+    if *samples < unsafe { EXIT_SAMPLE_THRESHOLD } {
+        return;
+    }
+    ctx.exit_samples.remove(&(exit_phys, target));
+
+    let targets = ctx.speculated_targets.entry(exit_phys).or_default();
+    if targets.len() >= MAX_SPECULATED_TARGETS_PER_PAGE || targets.contains(&(target, target_phys))
+    {
+        // Already speculated: The module hasn't been recompiled yet, or the target didn't fit
+        return;
+    }
+    targets.push((target, target_phys));
+    profiler::stat_increment(stat::SPECULATE);
+
+    // Recompile the module that exits (all modules that contain the exit page get the target when
+    // they are compiled the next time)
+    if let Some(&(virt_addr, phys_addr, cs_offset)) = ctx.module_entry.get(&wasm_table_index) {
+        if !ctx
+            .pending_recompiles
+            .iter()
+            .any(|r| r.phys_addr == phys_addr)
+        {
+            ctx.pending_recompiles.push_back(PendingRecompile {
+                wasm_table_index,
+                virt_addr,
+                phys_addr,
+                cs_offset,
+                state_flags,
+                attempts: 0,
+            });
+        }
+    }
+}
+
+/// Recompile modules for speculated targets, called from the main loop
+pub fn jit_run_pending_recompiles() {
+    let mut ctx = get_jit_state();
+    if ctx.compiling.is_some() {
+        return;
+    }
+    let mut r = match ctx.pending_recompiles.pop_front() {
+        None => return,
+        Some(r) => r,
+    };
+    let page = Page::page_of(r.phys_addr);
+    if !ctx.pages.contains_key(&page) || !ctx.entry_points.contains_key(&page) {
+        // the code is gone
+        return;
+    }
+    if unsafe { *global_pointers::state_flags } != r.state_flags
+        || cpu::get_seg_cs() as u32 != r.cs_offset
+        || cpu::translate_address_read_no_side_effects(r.virt_addr) != Ok(r.phys_addr)
+    {
+        // a different process or mode, try again later
+        r.attempts += 1;
+        if r.attempts < 100 {
+            ctx.pending_recompiles.push_back(r);
+        }
+        return;
+    }
+    // all pages of the module, otherwise pages without new entry points are not included
+    let force_pages: HashSet<Page> = ctx
+        .pages
+        .iter()
+        .filter(|(_, info)| info.wasm_table_index == r.wasm_table_index)
+        .map(|(&p, _)| p)
+        .collect();
+    if !force_pages.contains(&page) {
+        // the module has been replaced
+        return;
+    }
+    profiler::stat_increment(stat::RECOMPILE);
+    jit_analyze_and_generate(
+        &mut ctx,
+        r.virt_addr,
+        r.phys_addr,
+        r.cs_offset,
+        r.state_flags,
+        force_pages,
+    );
 }
 
 fn free_wasm_table_index(ctx: &mut JitState, wasm_table_index: WasmTableIndex) {
@@ -2245,6 +2742,7 @@ fn free_wasm_table_index(ctx: &mut JitState, wasm_table_index: WasmTableIndex) {
     #[cfg(debug_assertions)]
     ctx.wasm_table_index_to_page.remove(&wasm_table_index);
 
+    ctx.module_entry.remove(&wasm_table_index);
     ctx.wasm_table_index_free_list.push(wasm_table_index);
 
     // It is not strictly necessary to clear the function, but it will fail more predictably if we
@@ -2255,6 +2753,8 @@ fn free_wasm_table_index(ctx: &mut JitState, wasm_table_index: WasmTableIndex) {
 /// Register a write in this page: Delete all present code
 fn jit_dirty_page_ctx(ctx: &mut JitState, page: Page) {
     let mut did_have_code = false;
+
+    ctx.speculated_targets.remove(&page);
 
     if let Some(PageInfo {
         wasm_table_index,
@@ -2327,8 +2827,8 @@ fn jit_dirty_page_ctx(ctx: &mut JitState, page: Page) {
             did_have_code = true;
 
             match &ctx.compiling {
-                Some((index, CompilingPageState::Compiling { pages })) => {
-                    if pages.contains_key(&page) {
+                Some((index, CompilingPageState::Compiling { pages, guest_pages })) => {
+                    if pages.contains_key(&page) || guest_pages.contains(&page) {
                         ctx.compiling = Some((*index, CompilingPageState::CompilingWritten));
                     }
                 },
@@ -2338,7 +2838,7 @@ fn jit_dirty_page_ctx(ctx: &mut JitState, page: Page) {
     }
 
     match &ctx.compiling {
-        Some((_, CompilingPageState::Compiling { pages })) => {
+        Some((_, CompilingPageState::Compiling { pages, .. })) => {
             dbg_assert!(!pages.contains_key(&page));
         },
         _ => {},
@@ -2525,6 +3025,10 @@ pub unsafe fn set_jit_config(index: u32, value: u32) {
         3 => MAX_EXTRA_BASIC_BLOCKS = value,
         4 => JIT_THRESHOLD = value,
         5 => codegen::JIT_SIMD = value != 0,
+        6 => JIT_CHAINING = value != 0,
+        7 => JIT_SPECULATE = value != 0,
+        8 => EXIT_SAMPLE_THRESHOLD = value,
+        9 => MAX_GUEST_PAGES = value,
         _ => dbg_assert!(false),
     }
 }
@@ -2538,6 +3042,10 @@ pub unsafe fn get_jit_config(index: u32) -> u32 {
         3 => MAX_EXTRA_BASIC_BLOCKS as u32,
         4 => JIT_THRESHOLD,
         5 => codegen::JIT_SIMD as u32,
+        6 => JIT_CHAINING as u32,
+        7 => JIT_SPECULATE as u32,
+        8 => EXIT_SAMPLE_THRESHOLD,
+        9 => MAX_GUEST_PAGES,
         _ => 0,
     }
 }

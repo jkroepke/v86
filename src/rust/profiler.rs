@@ -118,6 +118,15 @@ pub enum stat {
     SEG_OFFSET_NOT_OPTIMISED_FS,
     SEG_OFFSET_NOT_OPTIMISED_GS,
     SEG_OFFSET_NOT_OPTIMISED_NOT_FLAT,
+
+    CHAIN,
+    CHAIN_NO_BUDGET,
+    CHAIN_NO_ENTRY,
+
+    INDIRECT_JUMP_GUEST,
+    EXIT_SAMPLE,
+    SPECULATE,
+    RECOMPILE,
 }
 
 #[allow(non_upper_case_globals)]

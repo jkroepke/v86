@@ -334,6 +334,27 @@ CPU.prototype.clear_opstats = function()
     this.wm.exports["profiler_init"]();
 };
 
+function wasm_supports_tail_calls()
+{
+    // (module (type (func)) (table 1 funcref)
+    //   (func (type 0) (return_call_indirect (type 0) (i32.const 0))))
+    const module = new Uint8Array([
+        0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
+        0x01, 0x04, 0x01, 0x60, 0x00, 0x00,
+        0x03, 0x02, 0x01, 0x00,
+        0x04, 0x04, 0x01, 0x70, 0x00, 0x01,
+        0x0a, 0x09, 0x01, 0x07, 0x00, 0x41, 0x00, 0x13, 0x00, 0x00, 0x0b,
+    ]);
+    try
+    {
+        return WebAssembly.validate(module);
+    }
+    catch(e)
+    {
+        return false;
+    }
+}
+
 CPU.prototype.create_jit_imports = function()
 {
     // Set this.jit_imports as generated WASM modules will expect
@@ -341,6 +362,12 @@ CPU.prototype.create_jit_imports = function()
     const jit_imports = Object.create(null);
 
     jit_imports["m"] = this.wm.exports["memory"];
+
+    if(this.wm.wasm_table)
+    {
+        // for tail calls from one generated module into another
+        jit_imports["t"] = this.wm.wasm_table;
+    }
 
     for(const name of Object.keys(this.wm.exports))
     {
@@ -1039,6 +1066,11 @@ CPU.prototype.init = function(settings, device_bus)
     if(settings.disable_jit)
     {
         this.set_jit_config(0, 1);
+    }
+    else if(this.jit_imports["t"] && wasm_supports_tail_calls())
+    {
+        // generated modules jump directly into each other
+        this.set_jit_config(6, 1);
     }
 
     settings.cpuid_level && this.set_cpuid_level(settings.cpuid_level);

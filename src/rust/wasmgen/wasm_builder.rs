@@ -82,6 +82,10 @@ pub struct WasmBuilder {
 
     initial_static_size: usize, // size of module after initialization, rest is drained on reset
 
+    // set when the module tail calls through the table of the main module, which must then be
+    // imported
+    uses_table: bool,
+
     // label for referencing block/if/loop constructs directly via branch instructions
     next_label: Label,
     label_stack: Vec<Label>,
@@ -129,6 +133,8 @@ impl WasmBuilder {
 
             initial_static_size: 0,
 
+            uses_table: false,
+
             label_to_depth: HashMap::default(),
             label_stack: Vec::new(),
             next_label: Label::ZERO,
@@ -163,6 +169,7 @@ impl WasmBuilder {
         self.set_import_table_size(2);
         self.set_import_count(0);
         self.instruction_body.clear();
+        self.uses_table = false;
         self.free_locals_i32.clear();
         self.free_locals_i64.clear();
         self.local_count = 0;
@@ -177,6 +184,9 @@ impl WasmBuilder {
         dbg_assert!(self.label_stack.is_empty());
 
         self.write_memory_import();
+        if self.uses_table {
+            self.write_table_import();
+        }
         self.write_function_section();
         self.write_export_section();
 
@@ -495,6 +505,26 @@ impl WasmBuilder {
         self.set_import_table_size(new_table_size);
     }
 
+    // Imports the function table of the main module as "e"."t". Like the memory, it comes after
+    // the function imports, so it doesn't change their indices
+    pub fn write_table_import(&mut self) {
+        self.output.push(1);
+        self.output.push('e' as u8);
+        self.output.push(1);
+        self.output.push('t' as u8);
+
+        self.output.push(op::EXT_TABLE);
+        self.output.push(op::TYPE_ANYFUNC);
+        self.output.push(0); // no maximum
+        self.output.push(0); // minimum size 0
+
+        let new_import_count = self.import_count + 1;
+        self.set_import_count(new_import_count);
+
+        let new_table_size = self.import_table_size + 8;
+        self.set_import_table_size(new_table_size);
+    }
+
     fn write_import_entry(&mut self, fn_name: &str, type_index: FunctionType) -> u16 {
         self.output.push(1); // length of module name
         self.output.push('e' as u8); // module name
@@ -530,11 +560,12 @@ impl WasmBuilder {
 
         // index of the exported function
         // function space starts with imports. index of last import is import count - 1
-        // the last import however is a memory, so we subtract one from that
+        // the last import however is a memory (and maybe a table), so we subtract those
         let next_op_idx = self.output.len();
         self.output.push(0);
         self.output.push(0); // add 2 bytes for writing 16 byte val
-        write_fixed_leb16_at_idx(&mut self.output, next_op_idx, self.import_count - 1);
+        let function_imports = self.import_count - 1 - self.uses_table as u16;
+        write_fixed_leb16_at_idx(&mut self.output, next_op_idx, function_imports);
     }
 
     fn get_fn_idx(&mut self, fn_name: &str, type_index: FunctionType) -> u16 {
@@ -1010,6 +1041,16 @@ impl WasmBuilder {
     }
 
     pub fn unreachable(&mut self) { self.instruction_body.push(op::OP_UNREACHABLE) }
+
+    /// Tail call (wasm tail call proposal) of a function with the signature of a generated module
+    /// (one i32 argument, no result) from the imported table. Expects the argument and the table
+    /// index on the stack
+    pub fn return_call_indirect_fn1(&mut self) {
+        self.uses_table = true;
+        self.instruction_body.push(op::OP_RETURN_CALLINDIRECT);
+        write_leb_u32(&mut self.instruction_body, FunctionType::FN1.to_u8() as u32);
+        self.instruction_body.push(0); // table index
+    }
 
     pub fn instruction_body_length(&self) -> u32 { self.instruction_body.len() as u32 }
 }

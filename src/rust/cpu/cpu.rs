@@ -320,6 +320,8 @@ pub static mut tsc_speed: u64 = 1;
 // used for restoring the state
 pub static mut tsc_offset: u64 = 0;
 
+// The layout is fixed, because generated code reads it (see jit::gen_chain)
+#[repr(C)]
 pub struct Code {
     pub wasm_table_index: jit::WasmTableIndex,
     pub state_flags: CachedStateFlags,
@@ -333,6 +335,10 @@ pub static mut valid_tlb_entries: [i32; 10000] = [0; 10000];
 pub static mut valid_tlb_entries_count: i32 = 0;
 
 pub static mut in_jit: bool = false;
+
+// Generated code may jump directly into another module (instead of returning to
+// do_many_cycles_native) while the instruction counter is below this value
+pub static mut jit_chain_end: u32 = 0;
 
 pub enum JitExitReason {
     None,
@@ -3398,6 +3404,8 @@ pub unsafe fn main_loop() -> f64 {
     loop {
         do_many_cycles_native();
 
+        jit::jit_run_pending_recompiles();
+
         let now = js::microtick();
         let t = js::run_hardware_timers(*acpi_enabled, now);
         handle_irqs();
@@ -3416,6 +3424,7 @@ pub unsafe fn main_loop() -> f64 {
 pub unsafe fn do_many_cycles_native() {
     profiler::stat_increment(stat::DO_MANY_CYCLES);
     let initial_instruction_counter = *instruction_counter;
+    jit_chain_end = initial_instruction_counter.wrapping_add(LOOP_COUNTER as u32);
     while (*instruction_counter).wrapping_sub(initial_instruction_counter) < LOOP_COUNTER as u32
         && !*in_hlt
     {
