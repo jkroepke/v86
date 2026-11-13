@@ -94,6 +94,10 @@ pub static mut MAX_EXTRA_BASIC_BLOCKS: u32 = 250;
 
 pub static mut JIT_THRESHOLD: u32 = 200 * 1000;
 
+// A page that was compiled or written before needs JIT_THRESHOLD << min(n, RECOMPILE_BACKOFF)
+// hotness for its next module, where n counts its modules and its invalidations. 0: off.
+pub static mut RECOMPILE_BACKOFF: u32 = 0;
+
 // less branches will generate if-else, more will generate brtable
 pub const BRTABLE_CUTOFF: usize = 10;
 
@@ -157,6 +161,8 @@ struct JitState {
     pages: HashMap<Page, PageInfo>,
     wasm_table_index_free_list: Vec<WasmTableIndex>,
     compiling: Option<(WasmTableIndex, CompilingPageState)>,
+    // modules and invalidations per page (for RECOMPILE_BACKOFF), kept when a page is written
+    page_history: HashMap<Page, u8>,
     #[cfg(debug_assertions)]
     wasm_table_index_to_page: HashMap<WasmTableIndex, HashSet<Page>>,
 }
@@ -244,6 +250,7 @@ impl JitState {
 
             wasm_table_index_free_list: Vec::from_iter(wasm_table_indices),
             compiling: None,
+            page_history: HashMap::default(),
 
             #[cfg(debug_assertions)]
             wasm_table_index_to_page: HashMap::default(),
@@ -1067,6 +1074,9 @@ fn jit_analyze_and_generate(
         ctx.wasm_builder.get_output_len() as u64,
     );
     profiler::stat_increment_by(stat::COMPILE_PAGE, pages.len() as u64);
+    for &p in &pages {
+        reset_hotness(ctx, p);
+    }
     if cfg!(feature = "profiler") {
         let ps: Vec<u32> = pages.iter().map(|p| p.to_u32()).collect();
         profiler::module_compiled(
@@ -2222,9 +2232,9 @@ pub fn jit_increase_hotness_and_maybe_compile(
         }
     }
 
-    let new_hotness = unsafe { *hotness } + heat;
+    let new_hotness = unsafe { *hotness }.wrapping_add(heat);
     unsafe { *hotness = new_hotness };
-    if new_hotness >= unsafe { JIT_THRESHOLD } {
+    if new_hotness as i32 >= unsafe { JIT_THRESHOLD } as i32 {
         let mut ctx = get_jit_state();
         if ctx.compiling.is_some() {
             return;
@@ -2238,6 +2248,20 @@ pub fn jit_increase_hotness_and_maybe_compile(
             profiler::stat_increment(stat::COMPILE_WRONG_ADDRESS_SPACE);
         }
     }
+}
+
+/// Count a module or an invalidation of the page and set its hotness to where it starts again
+fn reset_hotness(ctx: &mut JitState, page: Page) {
+    let backoff = unsafe { RECOMPILE_BACKOFF };
+    let mut start = 0u32;
+    if backoff != 0 {
+        let n = ctx.page_history.entry(page).or_insert(0);
+        let shift = (*n as u32).min(backoff).min(8);
+        *n = n.saturating_add(1);
+        // negative (as i32): the page needs more heat than JIT_THRESHOLD
+        start = 0u32.wrapping_sub(unsafe { JIT_THRESHOLD }.wrapping_mul((1 << shift) - 1));
+    }
+    unsafe { PAGE_HOTNESS[page.to_u32() as usize] = start };
 }
 
 fn free_wasm_table_index(ctx: &mut JitState, wasm_table_index: WasmTableIndex) {
@@ -2363,6 +2387,12 @@ fn jit_dirty_page_ctx(ctx: &mut JitState, page: Page) {
         Some(entry_points) => {
             unsafe {
                 PAGE_HOTNESS[page.to_u32() as usize] = 0;
+            }
+            if did_have_code {
+                // the page had a module: count the invalidation
+                reset_hotness(ctx, page);
+            }
+            unsafe {
                 for addr_low in entry_points {
                     let addr = page.to_address() | addr_low as u32;
                     let known = &mut KNOWN_ENTRY_POINTS[known_entry_point_index(addr)];
@@ -2451,9 +2481,13 @@ fn jit_clear_cache(ctx: &mut JitState) {
         pages_with_code.insert(p);
     }
 
+    // not a write by the guest: keep the history of the pages as it is
+    let backoff = unsafe { RECOMPILE_BACKOFF };
+    unsafe { RECOMPILE_BACKOFF = 0 };
     for page in pages_with_code {
         jit_dirty_page_ctx(ctx, page);
     }
+    unsafe { RECOMPILE_BACKOFF = backoff };
 }
 
 pub fn jit_page_has_code(page: Page) -> bool { jit_page_has_code_ctx(&mut get_jit_state(), page) }
@@ -2573,6 +2607,7 @@ pub unsafe fn set_jit_config(index: u32, value: u32) {
         3 => MAX_EXTRA_BASIC_BLOCKS = value,
         4 => JIT_THRESHOLD = value,
         5 => codegen::JIT_SIMD = value != 0,
+        6 => RECOMPILE_BACKOFF = value,
         _ => dbg_assert!(false),
     }
 }
@@ -2586,6 +2621,7 @@ pub unsafe fn get_jit_config(index: u32) -> u32 {
         3 => MAX_EXTRA_BASIC_BLOCKS as u32,
         4 => JIT_THRESHOLD,
         5 => codegen::JIT_SIMD as u32,
+        6 => RECOMPILE_BACKOFF,
         _ => 0,
     }
 }
