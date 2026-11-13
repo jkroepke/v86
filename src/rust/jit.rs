@@ -82,6 +82,9 @@ pub static mut JIT_THRESHOLD: u32 = 200 * 1000;
 // compile
 pub static mut JIT_CHAINING: bool = false;
 
+// see gen_exit_and_chain_direct
+pub static mut JIT_CHAIN_DIRECT: bool = true;
+
 // Exits from a module to code in another module are sampled. When one exit page jumps to one
 // target often, the target becomes a speculated target of that page: modules that contain the page
 // also contain the code at the target (as a guest page, see JitState::speculated_targets), and
@@ -1602,8 +1605,19 @@ fn jit_generate_module(
 
                         codegen::gen_debug_track_jit_exit(ctx.builder, block.last_instruction_addr);
                         codegen::gen_profiler_stat_increment(ctx.builder, stat::DIRECT_EXIT);
-                        set_exit_page(ctx.builder, block.virt_addr);
-                        ctx.builder.br(ctx.chain_label);
+                        match direct_chain_target(
+                            ctx,
+                            block,
+                            if jump_offset_is_32 { Some(jump_offset) } else { None },
+                        ) {
+                            Some(target) if !speculate && jump_offset_is_32 => {
+                                gen_exit_and_chain_direct(ctx, target)
+                            },
+                            _ => {
+                                set_exit_page(ctx.builder, block.virt_addr);
+                                ctx.builder.br(ctx.chain_label);
+                            },
+                        }
                     },
                     &BasicBlockType::Normal {
                         next_block_addr: Some(next_block_addr),
@@ -1907,8 +1921,22 @@ fn jit_generate_module(
                                     ctx.builder,
                                     stat::CONDITIONAL_JUMP_EXIT,
                                 );
-                                set_exit_page(ctx.builder, block.virt_addr);
-                                ctx.builder.br(ctx.chain_label);
+                                let target = match case {
+                                    Case::BranchTaken if !jump_offset_is_32 => None,
+                                    Case::BranchTaken => {
+                                        direct_chain_target(ctx, block, Some(jump_offset))
+                                    },
+                                    _ => direct_chain_target(ctx, block, None),
+                                };
+                                match target {
+                                    Some(target) if !speculate => {
+                                        gen_exit_and_chain_direct(ctx, target)
+                                    },
+                                    _ => {
+                                        set_exit_page(ctx.builder, block.virt_addr);
+                                        ctx.builder.br(ctx.chain_label);
+                                    },
+                                }
 
                                 if is_first {
                                     ctx.builder.block_end();
@@ -2419,6 +2447,72 @@ fn gen_chain(ctx: &mut JitContext) {
 
     builder.block_end();
     codegen::gen_profiler_stat_increment(builder, stat::CHAIN_NO_ENTRY);
+}
+
+/// Exit to a target that is known when the module is compiled (a direct jump to another module):
+/// write back the registers and the instruction counter, then jump into the module of the target
+/// with a tail call. Unlike gen_chain, this code is generated at every exit, so the lookup uses
+/// constant addresses and each exit has its own indirect jump (which the branch predictor of the
+/// host learns separately). Returns to do_many_cycles_native if the target has no entry
+fn gen_exit_and_chain_direct(ctx: &mut JitContext, target: u32) {
+    codegen::gen_move_registers_from_locals_to_memory(ctx);
+    codegen::gen_update_instruction_counter(ctx);
+
+    let state_flags = ctx.cpu.state_flags;
+    let builder = &mut *ctx.builder;
+    let miss = builder.block_void();
+
+    // (instruction_counter - jit_chain_end) as i32 >= 0
+    builder.load_fixed_i32(global_pointers::instruction_counter as u32);
+    builder.load_fixed_i32(&raw const cpu::jit_chain_end as u32);
+    builder.sub_i32();
+    builder.const_i32(0);
+    builder.ge_i32();
+    builder.br_if(miss);
+
+    let tlb_code_entry = unsafe { &raw const cpu::tlb_code[(target >> 12) as usize] } as u32;
+    builder.load_fixed_i32(tlb_code_entry);
+    let code = builder.tee_new_local();
+    builder.eqz_i32();
+    builder.br_if(miss);
+
+    // a jump doesn't change the state flags
+    builder.get_local(&code);
+    builder.load_u8(CODE_STATE_FLAGS_OFFSET);
+    builder.const_i32(state_flags.to_u32() as i32);
+    builder.ne_i32();
+    builder.br_if(miss);
+
+    builder.get_local(&code);
+    builder.load_aligned_u16(CODE_STATE_TABLE_OFFSET + 2 * (target & 0xFFF));
+    let state = builder.tee_new_local();
+    builder.const_i32(u16::MAX as i32);
+    builder.eq_i32();
+    builder.br_if(miss);
+
+    codegen::gen_profiler_stat_increment(builder, stat::CHAIN_DIRECT);
+    builder.get_local(&state);
+    builder.get_local(&code);
+    builder.load_aligned_u16(CODE_WASM_TABLE_INDEX_OFFSET);
+    builder.const_i32(cpu::WASM_TABLE_OFFSET as i32);
+    builder.add_i32();
+    builder.return_call_indirect_fn1();
+    builder.free_local(state);
+    builder.free_local(code);
+
+    builder.block_end();
+    codegen::gen_profiler_stat_increment(builder, stat::CHAIN_DIRECT_MISS);
+    builder.return_();
+}
+
+/// The virtual address of the target of a relative jump at the end of `block` (as computed by
+/// gen_set_eip_low_bits_and_jump_rel32), if the module may chain directly to it
+fn direct_chain_target(ctx: &JitContext, block: &BasicBlock, jump_offset: Option<i32>) -> Option<u32> {
+    if !unsafe { JIT_CHAINING && JIT_CHAIN_DIRECT } || !ctx.cpu.state_flags.is_32() {
+        return None;
+    }
+    let end = block.virt_addr as u32 & !0xFFF | block.end_addr & 0xFFF;
+    Some(end.wrapping_add(jump_offset.unwrap_or(0) as u32))
 }
 
 fn jit_generate_basic_block(ctx: &mut JitContext, block: &BasicBlock) {
@@ -3029,6 +3123,7 @@ pub unsafe fn set_jit_config(index: u32, value: u32) {
         7 => JIT_SPECULATE = value != 0,
         8 => EXIT_SAMPLE_THRESHOLD = value,
         9 => MAX_GUEST_PAGES = value,
+        10 => JIT_CHAIN_DIRECT = value != 0,
         _ => dbg_assert!(false),
     }
 }
@@ -3046,6 +3141,7 @@ pub unsafe fn get_jit_config(index: u32) -> u32 {
         7 => JIT_SPECULATE as u32,
         8 => EXIT_SAMPLE_THRESHOLD,
         9 => MAX_GUEST_PAGES,
+        10 => JIT_CHAIN_DIRECT as u32,
         _ => 0,
     }
 }

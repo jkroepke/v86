@@ -127,6 +127,9 @@ pub enum stat {
     EXIT_SAMPLE,
     SPECULATE,
     RECOMPILE,
+
+    CHAIN_DIRECT,
+    CHAIN_DIRECT_MISS,
 }
 
 #[allow(non_upper_case_globals)]
