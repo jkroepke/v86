@@ -7,6 +7,7 @@ use crate::cpu::fpu::*;
 use crate::cpu::global_pointers::*;
 use crate::cpu::misc_instr::*;
 use crate::cpu::string::*;
+use crate::gueststat::{self, G};
 use crate::prefix;
 use crate::softfloat::F80;
 
@@ -2180,6 +2181,8 @@ pub unsafe fn instr_F4() {
     }
 
     *in_hlt = true;
+    gueststat::inc(G::HLT);
+    gueststat::idle(true);
 
     // Try an hlt loop right now: This will run timer interrupts, and if one is
     // due it will immediately call call_interrupt_vector and continue

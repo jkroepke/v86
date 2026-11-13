@@ -44,7 +44,11 @@ const cpuOf = (file) => () => {
     return (Number(f[11]) + Number(f[12])) * 10;
   } catch { return 0; }
 };
-const cpu = cpuOf(`/proc/self/task/${process.pid}/stat`);
+// schedstat has the run time of the thread in nanoseconds. The ticks of stat (10 ms) are far
+// off for a thread that wakes up for a moment 100 times per second, like an idle pod.
+const schedstat = `/proc/self/task/${process.pid}/schedstat`;
+const runtime = () => { try { return Number(fs.readFileSync(schedstat, "utf8").split(" ")[0]) / 1e6; } catch { return 0; } };
+const cpu = runtime() > 0 ? runtime : cpuOf(`/proc/self/task/${process.pid}/stat`);
 const pcpu = process.env.PCPU === "1" ? cpuOf("/proc/self/stat") : undefined;
 // STATS=1 with a profiler build (make with-profiler) prints the counters of src/rust/profiler.rs
 let stats;
@@ -52,10 +56,18 @@ if (process.env.STATS === "1") {
   const src = fs.readFileSync(path.join(here, "../../src/rust/profiler.rs"), "utf8");
   stats = src.match(/pub enum stat \{([\s\S]*?)\}/)[1].split("\n").map((l) => l.trim().replace(/,$/, "")).filter((l) => l && !l.startsWith("//"));
 }
+// GSTAT=file.json writes the guest counters of src/rust/gueststat.rs for the last round
+// (needs make with-profiler, or V86_GUESTSTAT=1 make build/v86.wasm); gstat.cjs prints them
+let gstat, gstatOut;
+if (process.env.GSTAT) {
+  const src = fs.readFileSync(path.join(here, "../../src/rust/gueststat.rs"), "utf8");
+  gstat = src.match(/pub enum G \{([\s\S]*?)\}/)[1].split("\n").map((l) => l.trim().replace(/,$/, "")).filter((l) => l && !l.startsWith("//") && l !== "COUNT");
+  gstatOut = (g) => fs.writeFileSync(process.env.GSTAT, JSON.stringify(g));
+}
 const springJSON = path.join(DATA, "spring.json");
 await run({
   spring: fs.existsSync(springJSON) ? JSON.parse(fs.readFileSync(springJSON)) : null,
-  hook, cpu, pcpu, stats, mods, v86dir: V86DIR, read, workload, rounds: Number(rounds),
+  hook, cpu, pcpu, stats, gstat, gstatOut, idleMs: Number(process.env.IDLE_MS || 0), cmdline: process.env.CMDLINE, mods, v86dir: V86DIR, read, workload, rounds: Number(rounds),
   jitcfg: process.env.JITCFG, cpuhide: process.env.CPUHIDE, script: process.env.SCRIPT,
   v86opts: process.env.V86OPTS && JSON.parse(process.env.V86OPTS), log: console.log,
 });

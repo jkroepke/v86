@@ -12,6 +12,7 @@ use crate::cpu::modrm::{resolve_modrm16, resolve_modrm32};
 use crate::cpu::{apic, ioapic, pic};
 use crate::dbg::dbg_trace;
 use crate::gen;
+use crate::gueststat::{self, G};
 use crate::jit;
 use crate::jit::is_near_end_of_page;
 use crate::opstats;
@@ -529,6 +530,7 @@ pub unsafe fn iret16() { iret(true); }
 pub unsafe fn iret32() { iret(false); }
 
 pub unsafe fn iret(is_16: bool) {
+    gueststat::inc(G::IRET);
     if vm86_mode() && getiopl() < 3 {
         // vm86 mode, iopl != 3
         dbg_log!("#gp iret vm86 mode, iopl != 3");
@@ -822,6 +824,7 @@ pub unsafe fn call_interrupt_vector(
     is_software_int: bool,
     error_code: Option<i32>,
 ) {
+    gueststat::interrupt(interrupt_nr, is_software_int, *cpl, read_reg32(EAX));
     if *protected_mode {
         if vm86_mode() && *cr.offset(4) & CR4_VME != 0 {
             panic!("Unimplemented: VME");
@@ -2390,10 +2393,16 @@ pub unsafe fn clear_tlb() {
             global_page_offset += 1;
         }
         else {
+            gueststat::inc(G::TLB_ENTRIES_DROPPED);
+            if tlb_code[page as usize].is_some() {
+                gueststat::inc(G::TLB_CODE_DROPPED);
+            }
             clear_tlb_code(page);
             tlb_data[page as usize] = 0;
         }
     }
+    gueststat::inc(G::TLB_CLEAR);
+    gueststat::add(G::TLB_ENTRIES_KEPT_GLOBAL, global_page_offset as f64);
     valid_tlb_entries_count = global_page_offset;
 
     if CHECK_TLB_INVARIANTS {
@@ -2503,6 +2512,7 @@ pub unsafe fn trigger_pagefault(
         dbg_trace();
     }
     profiler::stat_increment(stat::PAGE_FAULT);
+    gueststat::page_fault(user, present, write);
     *cr.offset(2) = addr;
     // invalidate tlb entry
     let page = ((addr as u32) >> 12) as i32;
@@ -3076,6 +3086,7 @@ pub unsafe fn set_cr3(mut cr3: i32) {
         cr3 &= !0b111111100111;
         dbg_assert!(cr3 & 0xFFF == 0, "TODO");
     }
+    gueststat::inc(if *cr.offset(3) == cr3 { G::CR3_WRITE_SAME } else { G::CR3_WRITE });
     *cr.offset(3) = cr3;
     clear_tlb();
 }
@@ -3103,7 +3114,10 @@ pub unsafe fn load_pdpte(cr3: i32) {
     }
 }
 
-pub unsafe fn cpl_changed() { invalidate_eip_translation() }
+pub unsafe fn cpl_changed() {
+    gueststat::cpl_changed(*cpl);
+    invalidate_eip_translation()
+}
 
 // The translation of the code page (eip_phys, last_virt_eip) is not valid anymore. The loop of
 // the interpreter does not check last_virt_eip for every instruction: its block ends here, and
@@ -3407,6 +3421,18 @@ pub unsafe fn run_instruction0f_16(opcode: i32) { gen::interpreter0f::run(opcode
 pub unsafe fn run_instruction0f_32(opcode: i32) { gen::interpreter0f::run(opcode as u32 | 0x100) }
 
 pub unsafe fn cycle_internal() {
+    if gueststat::ON {
+        let (cpl0, eip0, count0) = (*cpl, *instruction_pointer, *instruction_counter);
+        let jit = cycle_internal_inner();
+        gueststat::block(cpl0, eip0, (*instruction_counter).wrapping_sub(count0), jit);
+    }
+    else {
+        cycle_internal_inner();
+    }
+}
+
+#[inline(always)]
+unsafe fn cycle_internal_inner() -> bool {
     profiler::stat_increment(stat::CYCLE_INTERNAL);
     let mut jit_entry = None;
     let initial_eip = *instruction_pointer;
@@ -3513,12 +3539,13 @@ pub unsafe fn cycle_internal() {
         else {
             profiler::stat_increment(stat::RUN_FROM_CACHE_EXIT_DIFFERENT_PAGE);
         }
+        true
     }
     else {
         *previous_ip = initial_eip;
         let bailed = jit_bailed;
         jit_bailed = false;
-        let phys_addr = return_on_pagefault!(get_phys_eip());
+        let phys_addr = return_on_pagefault!(get_phys_eip(), false);
 
         match tlb_code[(initial_eip as u32 >> 12) as usize] {
             None => {},
@@ -3530,7 +3557,7 @@ pub unsafe fn cycle_internal() {
                     && c.state_table[initial_eip as usize & 0xFFF] != u16::MAX
                 {
                     profiler::stat_increment(stat::RUN_INTERPRETED_PAGE_HAS_ENTRY_AFTER_PAGE_WALK);
-                    return;
+                    return false;
                 }
             },
         }
@@ -3567,7 +3594,8 @@ pub unsafe fn cycle_internal() {
             *instruction_counter != initial_instruction_counter,
             "Instruction counter didn't change"
         );
-    };
+        false
+    }
 }
 
 pub unsafe fn get_phys_eip() -> OrPageFault<u32> {
@@ -4730,6 +4758,7 @@ pub unsafe fn set_tsc(low: u32, high: u32) {
 
 #[no_mangle]
 pub unsafe fn read_tsc() -> u64 {
+    gueststat::inc(G::RDTSC);
     let value = (js::microtick() * TSC_RATE) as u64 - tsc_offset;
 
     if !TSC_ENABLE_IMPRECISE_BROWSER_WORKAROUND {
@@ -4843,6 +4872,7 @@ pub fn clear_tlb_code(page: i32) {
 }
 
 pub unsafe fn invlpg(addr: i32) {
+    gueststat::inc(G::INVLPG);
     let page = (addr as u32 >> 12) as i32;
     // Note: Doesn't remove this page from valid_tlb_entries: This isn't
     // necessary, because when valid_tlb_entries grows too large, it will be
@@ -4964,6 +4994,7 @@ pub unsafe fn handle_irqs() {
 unsafe fn pic_call_irq(interrupt_nr: u8) {
     *previous_ip = *instruction_pointer; // XXX: What if called after instruction (port IO)
     if *in_hlt {
+        gueststat::idle(false);
         js::stop_idling();
         *in_hlt = false;
     }
@@ -4989,6 +5020,7 @@ unsafe fn device_lower_irq(i: u8) {
 }
 
 pub fn io_port_read8(port: i32) -> i32 {
+    gueststat::port(port, false);
     unsafe {
         match port {
             0x20 => pic::port20_read() as i32,
@@ -5001,10 +5033,17 @@ pub fn io_port_read8(port: i32) -> i32 {
         }
     }
 }
-pub fn io_port_read16(port: i32) -> i32 { unsafe { js::io_port_read16(port) } }
-pub fn io_port_read32(port: i32) -> i32 { unsafe { js::io_port_read32(port) } }
+pub fn io_port_read16(port: i32) -> i32 {
+    gueststat::port(port, false);
+    unsafe { js::io_port_read16(port) }
+}
+pub fn io_port_read32(port: i32) -> i32 {
+    gueststat::port(port, false);
+    unsafe { js::io_port_read32(port) }
+}
 
 pub fn io_port_write8(port: i32, value: i32) {
+    gueststat::port(port, true);
     unsafe {
         match port {
             0x20 | 0x21 | 0xA0 | 0xA1 | 0x4D0 | 0x4D1 => {
@@ -5023,8 +5062,14 @@ pub fn io_port_write8(port: i32, value: i32) {
         }
     }
 }
-pub fn io_port_write16(port: i32, value: i32) { unsafe { js::io_port_write16(port, value) } }
-pub fn io_port_write32(port: i32, value: i32) { unsafe { js::io_port_write32(port, value) } }
+pub fn io_port_write16(port: i32, value: i32) {
+    gueststat::port(port, true);
+    unsafe { js::io_port_write16(port, value) }
+}
+pub fn io_port_write32(port: i32, value: i32) {
+    gueststat::port(port, true);
+    unsafe { js::io_port_write32(port, value) }
+}
 
 #[no_mangle]
 #[cfg(debug_assertions)]

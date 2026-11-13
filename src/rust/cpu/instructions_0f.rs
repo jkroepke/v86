@@ -22,6 +22,7 @@ use crate::cpu::arith::{
 use crate::cpu::cpu::*;
 use crate::cpu::fpu::fpu_set_tag_word;
 use crate::cpu::global_pointers::*;
+use crate::gueststat::{self, G};
 use crate::cpu::misc_instr::{
     adjust_stack_reg, bswap, cmovcc16, cmovcc32, fxrstor, fxsave, get_stack_pointer, jmpcc16,
     jmpcc32, push16, push32_sreg, setcc_mem, setcc_reg, test_b, test_be, test_l, test_le, test_o,
@@ -1369,6 +1370,8 @@ pub unsafe fn instr_0F34() {
         return;
     }
     else {
+        gueststat::inc(G::SYSENTER);
+        gueststat::syscall(read_reg32(EAX));
         *flags &= !FLAG_VM & !FLAG_INTERRUPT;
         *instruction_pointer = *sysenter_eip;
         write_reg32(ESP, *sysenter_esp);
@@ -1399,6 +1402,7 @@ pub unsafe fn instr_0F35() {
         return;
     }
     else {
+        gueststat::inc(G::SYSEXIT);
         *instruction_pointer = read_reg32(EDX);
         write_reg32(ESP, read_reg32(ECX));
         *sreg.offset(CS as isize) = (seg + 16 | 3) as u16;

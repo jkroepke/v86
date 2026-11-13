@@ -97,7 +97,7 @@ async function boot() {
   await new Promise((r) => e.add_listener("emulator-loaded", r));
   jitcfg(e);
   const t0 = performance.now();
-  bootKernel(e.v86.cpu, { kernel: O.read("vmlinux"), initrd: initramfs(O.read("init")), cmdline: "console=ttyS0 quiet loglevel=3" });
+  bootKernel(e.v86.cpu, { kernel: O.read("vmlinux"), initrd: initramfs(O.read("init")), cmdline: O.cmdline || "console=ttyS0 quiet loglevel=3" });
   e.run();
   try { await until("ready", () => control.includes("ready")); } catch (err) { console.error(con.join("\n")); throw err; }
   const ms = performance.now() - t0, instr = e.v86.cpu.instruction_counter[0];
@@ -134,6 +134,7 @@ async function pod(state, wl) {
   e.fs9p.storage = f.storage; e.fs9p.load_from_json(f.json);
   const cpu = e.v86.cpu;
   if (O.stats) cpu.wm.exports.profiler_init();
+  if (O.gstat) cpu.wm.exports.gueststat_reset();
   const i0 = cpu.instruction_counter[0];
   const c0 = O.cpu?.() ?? 0;
   const t0 = performance.now();
@@ -160,6 +161,22 @@ async function pod(state, wl) {
   r.cpu = (O.cpu?.() ?? 0) - c0;
   if (O.stats) { const out = []; O.stats.forEach((n, i) => { const v = cpu.wm.exports.profiler_stat_get(i); if (v) out.push(`${n}=${v}`); }); O.log(out.join("\n")); }
   r.minstr = ((cpu.instruction_counter[0] - i0) >>> 0) / 1e6;
+  if (O.idleMs) {
+    // the pod has nothing to do: what do its timers cost?
+    await sleep(500);
+    if (O.gstat) cpu.wm.exports.gueststat_reset();
+    const c1 = O.cpu?.() ?? 0, i1 = cpu.instruction_counter[0], t1 = performance.now();
+    await sleep(O.idleMs);
+    const dt = (performance.now() - t1) / 1000;
+    r.idleCpu = ((O.cpu?.() ?? 0) - c1) / dt;
+    r.idleInstr = ((cpu.instruction_counter[0] - i1) >>> 0) / dt;
+  }
+  if (O.gstat) {
+    // counters of src/rust/gueststat.rs; the arrays as [index, value] pairs
+    const g = cpu.wm.exports.gueststat_get;
+    const arr = (kind, n) => { const out = []; for (let i = 0; i < n; i++) { const v = g(kind, i); if (v) out.push([i, v]); } return out; };
+    O.gstatOut({ names: O.gstat, counters: O.gstat.map((_, i) => g(0, i)), vectors: arr(1, 256), syscalls: arr(2, 512), syscallInstr: arr(3, 512), portReads: arr(4, 65536), portWrites: arr(5, 65536), khist: arr(6, 1 << 20), uhist: arr(7, 1 << 20), wallMs: r.done, cpuMs: r.cpu });
+  }
   await e.destroy();
   return r;
 }
@@ -181,7 +198,7 @@ export async function run(o) {
     r.pcpu = (o.pcpu?.() ?? 0) - p0;
     await o.hook?.(i, "end");
     res.push(r);
-    log(`${o.workload} round ${i}: restore ${r.restore.toFixed(0)} ms, started ${r.started.toFixed(0)} ms, done ${r.done.toFixed(0)} ms, cpu ${r.cpu.toFixed(0)} ms${o.pcpu ? `, process cpu ${r.pcpu.toFixed(0)} ms` : ""}, ${r.minstr.toFixed(1)}M instr, ${(r.minstr / r.done * 1000).toFixed(1)}M instr/s`);
+    log(`${o.workload} round ${i}: restore ${r.restore.toFixed(0)} ms, started ${r.started.toFixed(0)} ms, done ${r.done.toFixed(0)} ms, cpu ${r.cpu.toFixed(0)} ms${o.pcpu ? `, process cpu ${r.pcpu.toFixed(0)} ms` : ""}, ${r.minstr.toFixed(1)}M instr, ${(r.minstr / r.done * 1000).toFixed(1)}M instr/s${O.idleMs ? `, idle: cpu ${r.idleCpu.toFixed(1)} ms/s, ${(r.idleInstr / 1000).toFixed(0)}k instr/s` : ""}`);
   }
   const med = (a) => a.slice().sort((x, y) => x - y)[a.length >> 1];
   if (res.length)   log(`MEDIAN ${o.workload}: done ${med(res.map((r) => r.done)).toFixed(0)} ms, cpu ${med(res.map((r) => r.cpu)).toFixed(0)} ms${o.pcpu ? `, process cpu ${med(res.map((r) => r.pcpu)).toFixed(0)} ms` : ""}, started ${med(res.map((r) => r.started)).toFixed(0)} ms, ${med(res.map((r) => r.minstr)).toFixed(1)}M instr, ${med(res.map((r) => r.minstr / r.done * 1000)).toFixed(1)} Mips`);

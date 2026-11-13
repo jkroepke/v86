@@ -27,7 +27,7 @@ jkroepke/tabernetes PR #15 (`examples/spring-boot`) builds such an image.
 
 Each round prints `restore` (state restore), `started` (init started the
 container), `done` (wall time from "go" to the end), `cpu` (CPU time of the
-main thread, from /proc; less noisy when other processes run) and the guest
+main thread, from /proc/.../schedstat; less noisy when other processes run) and the guest
 instructions (32-bit counter: wraps for spring). Run-to-run noise is about
 10 %: compare medians of several rounds, or use `ab.sh`.
 
@@ -42,6 +42,16 @@ instructions (32-bit counter: wraps for spring). Run-to-run noise is about
 - `PROF=x.cpuprofile [PROFROUND=n]`: V8 CPU profile from round n to the end;
   `node agg.cjs x.cpuprofile 40` lists self time per function, `node cat.cjs
   x.cpuprofile` groups it (JIT code, main_loop, interpreter, ...)
+- `GSTAT=x.json`: write the counters of `src/rust/gueststat.rs` for the last round
+  (needs `make with-profiler`, or `V86_GUESTSTAT=1 make build/v86.wasm` for a release
+  build with only these counters). `node gstat.cjs x.json [System.map] [syscall_32.tbl]`
+  prints them: user and kernel instructions and host time, system calls, interrupts, port
+  I/O, page faults, TLB flushes, and the kernel functions when `System.map` belongs to
+  the `vmlinux` in `VMDIR` (`SYM2OBJ=` groups them by source file: lines of
+  `symbol object-file`, made with `nm` over the build tree of the kernel)
+- `IDLE_MS=n`: after the workload, let the pod idle for n ms and print the CPU time
+  and the guest instructions per second (with `GSTAT`, the counters are of that time)
+- `CMDLINE="..."`: another kernel command line (default `console=ttyS0 quiet loglevel=3`)
 - `ab.sh <workload> <reps> <dirA> <dirB>`: alternating runs of two builds
 - `BENCH_DATA`, `VMDIR`, `TABERNETES_SRC`: other locations of the data
 
