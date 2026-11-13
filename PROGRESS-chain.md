@@ -19,7 +19,11 @@
 
 ## Current step
 - spring A/B running (chain2/run.sh tag b, results in chain2/results.txt): m2 vs c4 7=0 vs c3 7=0, 2x.
-- all-debug + rust-test OK on c4 state; nasmtests + force-jit running (scratchpad nasm1.txt/nasm2.txt).
+- c4 state: all-debug, rust-test, nasmtests 15600/15600, nasmtests-force-jit 15600/15600 pass.
+- callgrind (icg.sh, xm, 7=0): generated code Ir c3 9460M -> c4 8301M (-12 %), all of node 25.0G -> 23.5G.
+- spring under load ~20 (wall 430-510 s): m2 131.0/130.2 s cpu, c3 132.2; first c4 run hit the 600 s
+  http timeout (raised to 1500 s in core.mjs, HTTP_TIMEOUT env). Profiler run of c4 spring: scratchpad
+  stats-spring-c4.txt (bench/v86-c4-prof, statnames in scratchpad/statnames-c4.json).
 
 ## Next
 - nginx, spring (1 round per variant, 2-3x), nasm tests with chaining on, then decide what to keep.
