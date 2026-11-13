@@ -13,8 +13,12 @@
 - perf (jitdump) of shared chain stub: dependent load chain eip -> tlb_code -> Code -> state_table -> V8 dispatch table dominates.
 - Added gen_exit_and_chain_direct: per exit site, constant tlb_code address, own indirect jump. Build v86-c3. Only when JIT_SPECULATE (7) is off.
 
+- Registers as arguments of the module function (FN_MODULE, 9 i32 params; call_indirect_module in
+  cpu.rs passes reg32). Build v86-c4. xm (7=0, 3x3 rounds alternated, cpu ms): c3 3580/3840/3820,
+  c4 3290/3100/3710; xs c3 1370, c4 1170. nginx/cpu/goapp run fine.
+
 ## Current step
-- Next: pass registers as params of the module function in chained calls (skip 8 stores + 8 loads).
+- spring A/B: m2 vs c4 (7=0) vs c4 (default, speculate on).
 
 ## Next
 - nginx, spring (1 round per variant, 2-3x), nasm tests with chaining on, then decide what to keep.

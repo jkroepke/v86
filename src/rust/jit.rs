@@ -1380,12 +1380,9 @@ fn jit_generate_module(
 ) -> Vec<(u32, u16)> {
     builder.reset();
 
-    let mut register_locals = (0..8)
-        .map(|i| {
-            builder.load_fixed_i32(global_pointers::get_reg32_offset(i));
-            builder.set_new_local()
-        })
-        .collect();
+    // The registers are arguments of the function: modules that jump into each other (gen_chain)
+    // pass them along instead of writing them to memory
+    let mut register_locals = (0..8).map(|i| WasmLocal::register_argument(i)).collect();
 
     builder.const_i32(0);
     let instruction_counter = builder.set_new_local();
@@ -2278,7 +2275,6 @@ fn jit_generate_module(
     {
         // exit to code that is known to be outside of this module (or not compiled yet)
         ctx.builder.block_end();
-        codegen::gen_move_registers_from_locals_to_memory(ctx);
         codegen::gen_update_instruction_counter(ctx);
         if let Some(exit_page) = exit_page {
             gen_sample_exit(ctx.builder, &exit_page, wasm_table_index);
@@ -2287,6 +2283,7 @@ fn jit_generate_module(
         if unsafe { JIT_CHAINING } {
             gen_chain(ctx);
         }
+        codegen::gen_move_registers_from_locals_to_memory(ctx);
         ctx.builder.return_();
     }
     {
@@ -2296,9 +2293,6 @@ fn jit_generate_module(
         codegen::gen_update_instruction_counter(ctx);
     }
 
-    for local in ctx.register_locals.drain(..) {
-        ctx.builder.free_local(local);
-    }
     ctx.builder
         .free_local(ctx.instruction_counter.unsafe_clone());
 
@@ -2413,6 +2407,7 @@ fn gen_sample_exit(builder: &mut WasmBuilder, exit_page: &WasmLocal, wasm_table_
 /// are only handled after it, so the same limit on the instruction counter keeps the timing.
 /// Falls through if eip has no entry or the limit is reached
 fn gen_chain(ctx: &mut JitContext) {
+    let registers: Vec<WasmLocal> = ctx.register_locals.iter().map(|r| r.unsafe_clone()).collect();
     let builder = &mut *ctx.builder;
     let miss = builder.block_void();
 
@@ -2437,11 +2432,14 @@ fn gen_chain(ctx: &mut JitContext) {
     let code = gen_lookup_entry(builder, miss, &state, None, None);
     codegen::gen_profiler_stat_increment(builder, stat::CHAIN);
     builder.get_local(&state);
+    for r in &registers {
+        builder.get_local(r);
+    }
     builder.get_local(&code);
     builder.load_aligned_u16(CODE_WASM_TABLE_INDEX_OFFSET);
     builder.const_i32(cpu::WASM_TABLE_OFFSET as i32);
     builder.add_i32();
-    builder.return_call_indirect_fn1();
+    builder.return_call_indirect_module();
     builder.free_local(code);
     builder.free_local(state);
 
@@ -2450,15 +2448,15 @@ fn gen_chain(ctx: &mut JitContext) {
 }
 
 /// Exit to a target that is known when the module is compiled (a direct jump to another module):
-/// write back the registers and the instruction counter, then jump into the module of the target
-/// with a tail call. Unlike gen_chain, this code is generated at every exit, so the lookup uses
+/// write back the instruction counter, then jump into the module of the target with a tail call
+/// that passes the registers. Unlike gen_chain, this code is generated at every exit, so the lookup uses
 /// constant addresses and each exit has its own indirect jump (which the branch predictor of the
 /// host learns separately). Returns to do_many_cycles_native if the target has no entry
 fn gen_exit_and_chain_direct(ctx: &mut JitContext, target: u32) {
-    codegen::gen_move_registers_from_locals_to_memory(ctx);
     codegen::gen_update_instruction_counter(ctx);
 
     let state_flags = ctx.cpu.state_flags;
+    let registers: Vec<WasmLocal> = ctx.register_locals.iter().map(|r| r.unsafe_clone()).collect();
     let builder = &mut *ctx.builder;
     let miss = builder.block_void();
 
@@ -2492,17 +2490,21 @@ fn gen_exit_and_chain_direct(ctx: &mut JitContext, target: u32) {
 
     codegen::gen_profiler_stat_increment(builder, stat::CHAIN_DIRECT);
     builder.get_local(&state);
+    for r in &registers {
+        builder.get_local(r);
+    }
     builder.get_local(&code);
     builder.load_aligned_u16(CODE_WASM_TABLE_INDEX_OFFSET);
     builder.const_i32(cpu::WASM_TABLE_OFFSET as i32);
     builder.add_i32();
-    builder.return_call_indirect_fn1();
+    builder.return_call_indirect_module();
     builder.free_local(state);
     builder.free_local(code);
 
     builder.block_end();
     codegen::gen_profiler_stat_increment(builder, stat::CHAIN_DIRECT_MISS);
-    builder.return_();
+    codegen::gen_move_registers_from_locals_to_memory(ctx);
+    ctx.builder.return_();
 }
 
 /// The virtual address of the target of a relative jump at the end of `block` (as computed by

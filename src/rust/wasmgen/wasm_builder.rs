@@ -55,6 +55,9 @@ enum FunctionType {
     FN3_I32_I64_I32,
     FN3_I32_I64_I32_RET,
     FN4_I32_I64_I64_I32_RET,
+
+    // a generated module: the initial state and the 8 registers
+    FN_MODULE,
     // When adding at the end, update LAST below
 }
 
@@ -64,10 +67,12 @@ impl FunctionType {
         unsafe { transmute(x) }
     }
     pub fn to_u8(self: FunctionType) -> u8 { self as u8 }
-    pub const LAST: FunctionType = FunctionType::FN4_I32_I64_I64_I32_RET;
+    pub const LAST: FunctionType = FunctionType::FN_MODULE;
 }
 
-pub const WASM_MODULE_ARGUMENT_COUNT: u8 = 1;
+// The function of a generated module takes the initial state and the 8 registers (see
+// jit::jit_generate_module)
+pub const WASM_MODULE_ARGUMENT_COUNT: u8 = 9;
 
 pub struct WasmBuilder {
     output: Vec<u8>,
@@ -104,6 +109,11 @@ impl WasmLocal {
     /// Unsafe: Can result in multiple free's. Should only be used for locals that are used during
     /// the whole module (for example, registers)
     pub fn unsafe_clone(&self) -> WasmLocal { WasmLocal(self.0) }
+    /// The argument of the function of a generated module that holds register `i`
+    pub fn register_argument(i: u32) -> WasmLocal {
+        dbg_assert!(i < 8);
+        WasmLocal(1 + i as u8)
+    }
 }
 
 pub struct WasmLocalI64(u8);
@@ -428,6 +438,14 @@ impl WasmBuilder {
                     self.output.push(1);
                     self.output.push(op::TYPE_I32);
                 },
+                FunctionType::FN_MODULE => {
+                    self.output.push(op::TYPE_FUNC);
+                    self.output.push(WASM_MODULE_ARGUMENT_COUNT);
+                    for _ in 0..WASM_MODULE_ARGUMENT_COUNT {
+                        self.output.push(op::TYPE_I32);
+                    }
+                    self.output.push(0);
+                },
             }
         }
 
@@ -546,7 +564,7 @@ impl WasmBuilder {
         self.output.push(op::SC_FUNCTION);
         self.output.push(2); // length of this section
         self.output.push(1); // count of signature indices
-        self.output.push(FunctionType::FN1.to_u8());
+        self.output.push(FunctionType::FN_MODULE.to_u8());
     }
 
     pub fn write_export_section(&mut self) {
@@ -1042,13 +1060,12 @@ impl WasmBuilder {
 
     pub fn unreachable(&mut self) { self.instruction_body.push(op::OP_UNREACHABLE) }
 
-    /// Tail call (wasm tail call proposal) of a function with the signature of a generated module
-    /// (one i32 argument, no result) from the imported table. Expects the argument and the table
-    /// index on the stack
-    pub fn return_call_indirect_fn1(&mut self) {
+    /// Tail call (wasm tail call proposal) of the function of a generated module from the
+    /// imported table. Expects the arguments and the table index on the stack
+    pub fn return_call_indirect_module(&mut self) {
         self.uses_table = true;
         self.instruction_body.push(op::OP_RETURN_CALLINDIRECT);
-        write_leb_u32(&mut self.instruction_body, FunctionType::FN1.to_u8() as u32);
+        write_leb_u32(&mut self.instruction_body, FunctionType::FN_MODULE.to_u8() as u32);
         self.instruction_body.push(0); // table index
     }
 
