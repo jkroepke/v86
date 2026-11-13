@@ -678,14 +678,10 @@ fn gen_bail_to_interpreter(
         ctx.builder.call_fn2(report);
         gen_debug_track_jit_exit(ctx.builder, ctx.start_of_current_instruction);
     }
-    ctx.builder.const_i32(&raw mut crate::cpu::cpu::jit_bailed as i32);
-    ctx.builder.const_i32(1);
-    ctx.builder.store_u8(0);
-    gen_set_eip_low_bits(
-        ctx.builder,
-        ctx.start_of_current_instruction as i32 & 0xFFF,
-    );
-    ctx.builder.br(ctx.exit_label);
+    ctx.builder
+        .const_i32(ctx.start_of_current_instruction as i32 & 0xFFF);
+    ctx.builder.set_local(&ctx.bail_eip_low_bits_local);
+    ctx.builder.br(ctx.bail_label);
 }
 
 /// Fast path test of a TLB entry as one comparison: OR bit 12 (set when the access of `bits`

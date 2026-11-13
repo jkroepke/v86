@@ -331,7 +331,7 @@ pub static mut tsc_speed: u64 = 1;
 // used for restoring the state
 pub static mut tsc_offset: u64 = 0;
 
-// The JIT reads this struct from generated code (jit_find_cache_entry_in_page is inlined):
+// Generated code reads this struct (the lookup of indirect jumps in jit.rs):
 // state_table at 0, then wasm_table_index, state_flags and a zero byte as one u32 at 0x2000.
 #[repr(C)]
 pub struct Code {

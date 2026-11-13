@@ -26,7 +26,16 @@ Scripts: jm/ab.sh (alternating runs), jm/med.py (medians), jm/perf.sh, jm/perfj.
   (13 instr per access), main_loop 14 % (misses: state_table 22 %, Code header 9 %, MODULE_USE 6 %)
 - e4: bails do not add hotness/entry points (RUN_INTERPRETED_DIFFERENT_STATE miscount fixed,
   JIT_BAIL counter): 739K bails in spring, 158 recompiles (base 139)
-- running: ab base/e3/e4 spring + base/e4 nginx goapp cpu glibc (jm/out/ab-e4-*.txt)
+- e5: + page-cross bit via lea/xor; jit_find_cache_entry_in_page removed; expect tests updated
+  (task_switch_test_sse fails in wabt 1.0.6: SIMD opcodes, also on master)
+- final A/B base vs e5 (fin-*.txt): spring main 75260 -> 62820, process 105560 -> 82790,
+  wall 77757 -> 63743, peak 729 -> 731 MiB; JIT bytes 24.1 -> 28.0 MB (bail code is longer)
+  nginx 695 -> 685 / 1105 -> 1030; goapp 1970 -> 1925 / 3270 -> 2790;
+  cpu 5500 -> 4865 / 7565 -> 6125; glibc 5310 -> 4875 / 8385 -> 6970
+- tests on e5 code: nasmtests 15613/15613, force-jit 15613/15613 (fixtures copied from
+  v86-cold: same .asm), rust-test ok
+- e6: one shared bail block per module (site: set local + br) to cut the bytes
+- running: e5 vs e6 spring, base/e5/e6 cpu glibc goapp (jm/out/e6-*.txt)
 
 ## Next
 - tests (all-debug, nasmtests, nasmtests-force-jit, rust-test, expect-tests update), merge, dist
