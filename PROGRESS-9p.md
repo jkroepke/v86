@@ -24,3 +24,8 @@
 - tests: eslint, rust-test not needed; push ninep to master after rebase on origin/master.
 - report; tabernetes proposal: LayerStorage.readInto (bench/9p/rootfs-into.js) + layers.js
   read-only sync access handle in vmworker.
+
+## Status (final)
+- Pushed to fork master: a0ce4f4, ec5142e, da8075c (rebased on 83a2816). Track finished.
+- tabernetes proposal: scratchpad patch tabernetes-9p-readinto.patch (LayerStorage.readInto,
+  OPFS read-only sync access handle in layers.js), not applied.
