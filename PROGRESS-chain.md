@@ -18,7 +18,8 @@
   c4 3290/3100/3710; xs c3 1370, c4 1170. nginx/cpu/goapp run fine.
 
 ## Current step
-- spring A/B: m2 vs c4 (7=0) vs c4 (default, speculate on).
+- spring A/B running (chain2/run.sh tag b, results in chain2/results.txt): m2 vs c4 7=0 vs c3 7=0, 2x.
+- all-debug + rust-test OK on c4 state; nasmtests + force-jit running (scratchpad nasm1.txt/nasm2.txt).
 
 ## Next
 - nginx, spring (1 round per variant, 2-3x), nasm tests with chaining on, then decide what to keep.
