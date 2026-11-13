@@ -72,7 +72,7 @@ fn three_byte_analyze(cpu: &mut CpuContext, analysis: &mut Analysis, op: Option<
             if modrm_byte < 0xC0 {
                 modrm_analyze(cpu, modrm_byte);
             }
-            if let Op::XmmImm(..) | Op::MmxImm(..) | Op::R32Imm(..) = op {
+            if let Op::XmmImm(..) | Op::MmxImm(..) | Op::R32Imm(..) | Op::Extract(..) = op {
                 cpu.read_imm8();
             }
         },

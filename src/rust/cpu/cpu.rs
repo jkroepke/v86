@@ -296,6 +296,9 @@ pub const LOOP_COUNTER: i32 = 100_003;
 pub const TSC_RATE: f64 = 1_000_000.0;
 
 pub static mut cpuid_level: u32 = 0x16;
+// Feature bits that CPUID does not report although the instructions work: [leaf 1 ecx, leaf 7 ebx].
+// For measurements, and for an embedder that must switch an extension off
+pub static mut cpuid_hidden: [i32; 2] = [0; 2];
 
 // Not zero when the interpreter must leave its loop after the current instruction
 pub static mut jit_block_boundary: u8 = 0;
@@ -5100,3 +5103,5 @@ pub unsafe fn reset_cpu() {
 
 #[no_mangle]
 pub unsafe fn set_cpuid_level(level: u32) { cpuid_level = level }
+#[no_mangle]
+pub unsafe fn set_cpuid_hidden(i: u32, bits: i32) { cpuid_hidden[i as usize] = bits }

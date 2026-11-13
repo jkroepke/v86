@@ -138,9 +138,30 @@ fn three_byte_jit(ctx: &mut JitContext, instr_flags: &mut u32, op: Option<Op>) {
                 let imm = ctx.cpu.read_imm8() as u32;
                 sse_read128_xmm_mem_imm(ctx, name, addr, r2, imm)
             },
-            Op::R32Imm(_, name) => {
+            Op::Extract(_, name, size) => {
                 let imm = ctx.cpu.read_imm8() as u32;
-                codegen::gen_modrm_resolve_safe_read32(ctx, addr);
+                codegen::gen_modrm_resolve(ctx, addr);
+                let address_local = ctx.builder.set_new_local();
+                ctx.builder.const_i32(r2 as i32);
+                ctx.builder.const_i32(imm as i32);
+                ctx.builder.call_fn2_ret(name);
+                let value_local = ctx.builder.set_new_local();
+                match size {
+                    1 => codegen::gen_safe_write8(ctx, &address_local, &value_local),
+                    2 => codegen::gen_safe_write16(ctx, &address_local, &value_local),
+                    _ => codegen::gen_safe_write32(ctx, &address_local, &value_local),
+                }
+                ctx.builder.free_local(address_local);
+                ctx.builder.free_local(value_local);
+            },
+            Op::R32Imm(_, name, size) => {
+                let imm = ctx.cpu.read_imm8() as u32;
+                if size == 1 {
+                    codegen::gen_modrm_resolve_safe_read8(ctx, addr);
+                }
+                else {
+                    codegen::gen_modrm_resolve_safe_read32(ctx, addr);
+                }
                 ctx.builder.const_i32(r2 as i32);
                 ctx.builder.const_i32(imm as i32);
                 ctx.builder.call_fn3(name)
@@ -162,7 +183,14 @@ fn three_byte_jit(ctx: &mut JitContext, instr_flags: &mut u32, op: Option<Op>) {
                 let imm = ctx.cpu.read_imm8() as u32;
                 sse_read128_xmm_xmm_imm(ctx, name, r1, r2, imm)
             },
-            Op::R32Imm(_, name) => {
+            Op::Extract(_, name, _) => {
+                let imm = ctx.cpu.read_imm8() as u32;
+                ctx.builder.const_i32(r2 as i32);
+                ctx.builder.const_i32(imm as i32);
+                ctx.builder.call_fn2_ret(name);
+                codegen::gen_set_reg32(ctx, r1);
+            },
+            Op::R32Imm(_, name, _) => {
                 let imm = ctx.cpu.read_imm8() as u32;
                 codegen::gen_get_reg32(ctx, r1);
                 ctx.builder.const_i32(r2 as i32);
