@@ -12,7 +12,7 @@ const __dirname = url.fileURLToPath(new URL(".", import.meta.url));
 const TEST_RELEASE_BUILD = +process.env.TEST_RELEASE_BUILD;
 const { V86 } = await import(TEST_RELEASE_BUILD ? "../../build/libv86.mjs" : "../../src/main.js");
 
-const libwabt = wabt();
+const libwabt = await wabt();
 
 const TEST_NAME = process.env.TEST_NAME;
 
@@ -54,7 +54,11 @@ function run_all()
 // Remove parts that may not be stable between multiple runs
 function normalise_wast(wast)
 {
-    return wast.replace(/offset=(\d+)/g, function(match, offset)
+    // Preserve the existing snapshot spelling and zero-based local names when
+    // upgrading WABT; its newer decoder is needed for the current SIMD opcodes.
+    return wast.replace(/\blocal\.(get|set|tee)\b/g, (_, instruction) => instruction + "_local")
+        .replace(/\$l(\d+)\b/g, (_, index) => "$l" + (Number(index) - 1))
+        .replace(/offset=(\d+)/g, function(match, offset)
         {
             offset = Number(offset);
 
@@ -183,7 +187,7 @@ function disassemble_wasm(wasm)
 
     try
     {
-        var module = libwabt.readWasm(wasm, { readDebugNames: false });
+        var module = libwabt.readWasm(wasm, { readDebugNames: false, simd: true });
         module.generateNames();
         module.applyNames();
         return module.toText({ foldExprs: true, inlineExport: true });

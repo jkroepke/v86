@@ -80,12 +80,11 @@
             (i64.store
               (i32.const 96)
               (i64.const 9710921056263))
-            (set_local $l9
-              (i32.load8_u
-                (i32.const 112)))
             (if $I5
               (i32.and
-                (get_local $l9)
+                (tee_local $l9
+                  (i32.load8_u
+                    (i32.const 112)))
                 (i32.const -256))
               (then
                 (unreachable)))

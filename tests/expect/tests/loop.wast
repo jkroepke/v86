@@ -79,12 +79,11 @@
                   (i32.add
                     (get_local $l8)
                     (i32.const 1)))
-                (set_local $l1
-                  (i32.sub
-                    (get_local $l1)
-                    (i32.const 1)))
                 (br_if $L6
-                  (get_local $l1))))
+                  (tee_local $l1
+                    (i32.sub
+                      (get_local $l1)
+                      (i32.const 1))))))
             (set_local $l8
               (i32.add
                 (get_local $l8)

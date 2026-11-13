@@ -76,14 +76,10 @@
                 (call $e.task_switch_test_mmx_jit
                   (i32.const 0))
                 (br $B1)))
-            (i64.store
-              (i32.const 1136)
-              (i64.load
-                (i32.const 848)))
-            (i64.store
-              (i32.const 1144)
-              (i64.load
-                (i32.const 856)))
+            (v128.store offset=1136
+              (i32.const 0)
+              (v128.load offset=848
+                (i32.const 0)))
             (call $e.instr_660F54
               (i32.const 1136)
               (i32.const 0))

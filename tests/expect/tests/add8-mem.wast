@@ -80,29 +80,28 @@
                 (br $B1)))
             (i32.load
               (i32.const 748))
-            (i32.add)
-            (set_local $l9)
-            (block $B6
-              (br_if $B6
-                (tee_local $l11
-                  (i32.eq
-                    (i32.and
-                      (tee_local $l10
-                        (i32.load offset={normalised output}
-                          (i32.shl
-                            (i32.shr_u
-                              (get_local $l9)
-                              (i32.const 12))
-                            (i32.const 2))))
-                      (i32.const 4011))
-                    (i32.const 1))))
-              (br_if $B1
-                (i32.and
-                  (tee_local $l10
-                    (call $e.safe_read_write8_slow_jit
-                      (get_local $l9)
-                      (i32.const 58916864)))
-                  (i32.const 1))))
+            (if $I6
+              (tee_local $l11
+                (i32.ne
+                  (i32.and
+                    (tee_local $l10
+                      (i32.load offset={normalised output}
+                        (i32.shl
+                          (i32.shr_u
+                            (tee_local $l9
+                              (i32.add))
+                            (i32.const 12))
+                          (i32.const 2))))
+                    (i32.const 43))
+                  (i32.const 1)))
+              (then
+                (br_if $B1
+                  (i32.and
+                    (tee_local $l10
+                      (call $e.safe_read_write8_slow_jit
+                        (get_local $l9)
+                        (i32.const 58916864)))
+                    (i32.const 1)))))
             (set_local $l12
               (i32.load8_u
                 (tee_local $l10
@@ -130,8 +129,7 @@
               (i32.load8_u
                 (i32.const 112)))
             (if $I7
-              (i32.eqz
-                (get_local $l11))
+              (get_local $l11)
               (then
                 (if $I8
                   (i32.and

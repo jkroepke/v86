@@ -76,15 +76,14 @@
             (i64.store
               (i32.const 96)
               (i64.const -9223362325933719521))
-            (set_local $l9
-              (i32.ne
-                (i32.lt_s
-                  (get_local $l0)
-                  (get_local $l3))
-                (i32.const 0)))
             (if $I5
               (i32.and
-                (get_local $l9)
+                (tee_local $l9
+                  (i32.ne
+                    (i32.lt_s
+                      (get_local $l0)
+                      (get_local $l3))
+                    (i32.const 0)))
                 (i32.const -256))
               (then
                 (unreachable)))
@@ -96,20 +95,19 @@
                   (i32.const -256))))
             (set_local $l3
               (i32.const 0))
-            (set_local $l9
-              (i32.ne
-                (i32.ge_s
-                  (i32.load
-                    (i32.const 104))
-                  (i32.sub
-                    (i32.load
-                      (i32.const 104))
-                    (i32.load
-                      (i32.const 112))))
-                (i32.const 0)))
             (if $I6
               (i32.and
-                (get_local $l9)
+                (tee_local $l9
+                  (i32.ne
+                    (i32.ge_s
+                      (i32.load
+                        (i32.const 104))
+                      (i32.sub
+                        (i32.load
+                          (i32.const 104))
+                        (i32.load
+                          (i32.const 112))))
+                    (i32.const 0)))
                 (i32.const -256))
               (then
                 (unreachable)))
@@ -148,16 +146,15 @@
             (i64.store
               (i32.const 96)
               (i64.const 9706626088991))
-            (set_local $l9
-              (i32.ne
-                (i32.and
-                  (i32.load
-                    (i32.const 104))
-                  (i32.const -2147483648))
-                (i32.const 0)))
             (if $I7
               (i32.and
-                (get_local $l9)
+                (tee_local $l9
+                  (i32.ne
+                    (i32.and
+                      (i32.load
+                        (i32.const 104))
+                      (i32.const -2147483648))
+                    (i32.const 0)))
                 (i32.const -256))
               (then
                 (unreachable)))
@@ -178,17 +175,16 @@
               (then
                 (set_local $l1
                   (get_local $l0))))
-            (set_local $l9
-              (i32.ne
-                (i32.eqz
-                  (i32.and
-                    (i32.load
-                      (i32.const 104))
-                    (i32.const -2147483648)))
-                (i32.const 0)))
             (if $I9
               (i32.and
-                (get_local $l9)
+                (tee_local $l9
+                  (i32.ne
+                    (i32.eqz
+                      (i32.and
+                        (i32.load
+                          (i32.const 104))
+                        (i32.const -2147483648)))
+                    (i32.const 0)))
                 (i32.const -256))
               (then
                 (unreachable)))
@@ -215,16 +211,15 @@
             (i64.store
               (i32.const 96)
               (i64.const -9223362325933719521))
-            (set_local $l9
-              (i32.ne
-                (i32.lt_u
-                  (i32.load
-                    (i32.const 104))
-                  (get_local $l2))
-                (i32.const 0)))
             (if $I10
               (i32.and
-                (get_local $l9)
+                (tee_local $l9
+                  (i32.ne
+                    (i32.lt_u
+                      (i32.load
+                        (i32.const 104))
+                      (get_local $l2))
+                    (i32.const 0)))
                 (i32.const -256))
               (then
                 (unreachable)))
@@ -247,16 +242,15 @@
             (i64.store
               (i32.const 96)
               (i64.const 9710921056287))
-            (set_local $l9
-              (i32.ne
-                (i32.lt_s
-                  (i32.load
-                    (i32.const 104))
-                  (i32.const 3))
-                (i32.const 0)))
             (if $I11
               (i32.and
-                (get_local $l9)
+                (tee_local $l9
+                  (i32.ne
+                    (i32.lt_s
+                      (i32.load
+                        (i32.const 104))
+                      (i32.const 3))
+                    (i32.const 0)))
                 (i32.const -256))
               (then
                 (unreachable)))
@@ -266,16 +260,15 @@
                 (i32.and
                   (get_local $l3)
                   (i32.const -256))))
-            (set_local $l9
-              (i32.ne
-                (i32.le_s
-                  (i32.load
-                    (i32.const 104))
-                  (i32.const 3))
-                (i32.const 0)))
             (if $I12
               (i32.and
-                (get_local $l9)
+                (tee_local $l9
+                  (i32.ne
+                    (i32.le_s
+                      (i32.load
+                        (i32.const 104))
+                      (i32.const 3))
+                    (i32.const 0)))
                 (i32.const -256))
               (then
                 (unreachable)))
@@ -344,25 +337,23 @@
                         (get_local $l9)))
                     (i32.const 20))
                   (i32.const 2048))))
-            (set_local $l6
-              (get_local $l9))
-            (set_local $l9
-              (i32.ne
-                (i32.or
-                  (i32.and
-                    (i32.xor
-                      (get_local $l6)
-                      (i32.shl
-                        (i32.load
-                          (i32.const 120))
-                        (i32.const 20)))
-                    (i32.const -2147483648))
-                  (i32.eqz
-                    (get_local $l6)))
-                (i32.const 0)))
             (if $I13
               (i32.and
-                (get_local $l9)
+                (tee_local $l9
+                  (i32.ne
+                    (i32.or
+                      (i32.and
+                        (i32.xor
+                          (tee_local $l6
+                            (get_local $l9))
+                          (i32.shl
+                            (i32.load
+                              (i32.const 120))
+                            (i32.const 20)))
+                        (i32.const -2147483648))
+                      (i32.eqz
+                        (get_local $l6)))
+                    (i32.const 0)))
                 (i32.const -256))
               (then
                 (unreachable)))
@@ -406,24 +397,23 @@
                         (i32.const 31)))
                     (i32.const 11))
                   (i32.const 2048))))
-            (set_local $l9
-              (i32.ne
-                (i32.eqz
-                  (i32.or
-                    (i32.and
-                      (i32.xor
-                        (get_local $l6)
-                        (i32.shl
-                          (i32.load
-                            (i32.const 120))
-                          (i32.const 20)))
-                      (i32.const -2147483648))
-                    (i32.eqz
-                      (get_local $l6))))
-                (i32.const 0)))
             (if $I14
               (i32.and
-                (get_local $l9)
+                (tee_local $l9
+                  (i32.ne
+                    (i32.eqz
+                      (i32.or
+                        (i32.and
+                          (i32.xor
+                            (get_local $l6)
+                            (i32.shl
+                              (i32.load
+                                (i32.const 120))
+                              (i32.const 20)))
+                          (i32.const -2147483648))
+                        (i32.eqz
+                          (get_local $l6))))
+                    (i32.const 0)))
                 (i32.const -256))
               (then
                 (unreachable)))

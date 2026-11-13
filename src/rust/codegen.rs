@@ -1,6 +1,6 @@
 use crate::cpu::cpu::{
     tlb_data, FLAG_CARRY, FLAG_OVERFLOW, FLAG_SIGN, FLAG_ZERO, OPSIZE_16, OPSIZE_32, OPSIZE_8,
-    TLB_GLOBAL, TLB_HAS_CODE, TLB_NO_EXEC, TLB_NO_USER, TLB_READONLY, TLB_VALID,
+    TLB_HAS_CODE, TLB_IN_MAPPED_RANGE, TLB_NO_EXEC, TLB_NO_USER, TLB_READONLY, TLB_VALID,
 };
 use crate::cpu::global_pointers;
 use crate::cpu::memory;
@@ -676,7 +676,6 @@ fn gen_safe_read(
     //   if page_fault: goto exit-with-pagefault
     //   fast: mem[(entry & ~0xFFF) ^ addr]
 
-    let cont = ctx.builder.block_void();
     ctx.builder.get_local(&address_local);
 
     ctx.builder.const_i32(12);
@@ -688,30 +687,27 @@ fn gen_safe_read(
         .load_aligned_i32(unsafe { &tlb_data[0] as *const i32 as u32 });
     let entry_local = ctx.builder.tee_new_local();
 
+    // Only test defined permission/IO flags. Unused bits 7..11 are zero;
+    // including them would require another byte in the mask's signed LEB.
     ctx.builder.const_i32(
-        (0xFFF
-            & !TLB_READONLY
-            & !TLB_GLOBAL
-            & !TLB_HAS_CODE
-            & !TLB_NO_EXEC
-            & !(if ctx.cpu.cpl3() { 0 } else { TLB_NO_USER })) as i32,
+        (TLB_VALID | TLB_IN_MAPPED_RANGE | if ctx.cpu.cpl3() { TLB_NO_USER } else { 0 }) as i32,
     );
     ctx.builder.and_i32();
 
     ctx.builder.const_i32(TLB_VALID as i32);
-    ctx.builder.eq_i32();
+    ctx.builder.ne_i32();
 
     if bits != BitSize::BYTE {
         ctx.builder.get_local(&address_local);
         ctx.builder.const_i32(0xFFF);
         ctx.builder.and_i32();
         ctx.builder.const_i32(0x1000 - bits.bytes() as i32);
-        ctx.builder.le_i32();
+        ctx.builder.gt_i32();
 
-        ctx.builder.and_i32();
+        ctx.builder.or_i32();
     }
 
-    ctx.builder.br_if(cont);
+    ctx.builder.if_void();
 
     if cfg!(feature = "profiler") {
         ctx.builder.get_local(&address_local);
@@ -822,7 +818,6 @@ pub fn gen_get_phys_eip_plus_mem(ctx: &mut JitContext, address_local: &WasmLocal
     // XXX: Currently does not use ctx.start_of_current_instruction, but rather assumes that eip is
     //      already correct (pointing at the current instruction)
 
-    let cont = ctx.builder.block_void();
     ctx.builder.get_local(&address_local);
 
     ctx.builder.const_i32(12);
@@ -835,18 +830,17 @@ pub fn gen_get_phys_eip_plus_mem(ctx: &mut JitContext, address_local: &WasmLocal
     let entry_local = ctx.builder.tee_new_local();
 
     ctx.builder.const_i32(
-        (0xFFF
-            & !TLB_READONLY
-            & !TLB_GLOBAL
-            & !TLB_HAS_CODE
-            & !(if ctx.cpu.cpl3() { 0 } else { TLB_NO_USER })) as i32,
+        (TLB_VALID
+            | TLB_IN_MAPPED_RANGE
+            | TLB_NO_EXEC
+            | if ctx.cpu.cpl3() { TLB_NO_USER } else { 0 }) as i32,
     );
     ctx.builder.and_i32();
 
     ctx.builder.const_i32(TLB_VALID as i32);
-    ctx.builder.eq_i32();
+    ctx.builder.ne_i32();
 
-    ctx.builder.br_if(cont);
+    ctx.builder.if_void();
 
     if cfg!(feature = "profiler") {
         ctx.builder.get_local(&address_local);
@@ -901,7 +895,6 @@ fn gen_safe_write(
     //   if page_fault: goto exit-with-pagefault
     //   fast: mem[(entry & ~0xFFF) ^ addr] <- value
 
-    let cont = ctx.builder.block_void();
     ctx.builder.get_local(&address_local);
 
     ctx.builder.const_i32(12);
@@ -914,25 +907,28 @@ fn gen_safe_write(
     let entry_local = ctx.builder.tee_new_local();
 
     ctx.builder.const_i32(
-        (0xFFF & !TLB_GLOBAL & !TLB_NO_EXEC & !(if ctx.cpu.cpl3() { 0 } else { TLB_NO_USER }))
-            as i32,
+        (TLB_VALID
+            | TLB_READONLY
+            | TLB_HAS_CODE
+            | TLB_IN_MAPPED_RANGE
+            | if ctx.cpu.cpl3() { TLB_NO_USER } else { 0 }) as i32,
     );
     ctx.builder.and_i32();
 
     ctx.builder.const_i32(TLB_VALID as i32);
-    ctx.builder.eq_i32();
+    ctx.builder.ne_i32();
 
     if bits != BitSize::BYTE {
         ctx.builder.get_local(&address_local);
         ctx.builder.const_i32(0xFFF);
         ctx.builder.and_i32();
         ctx.builder.const_i32(0x1000 - bits.bytes() as i32);
-        ctx.builder.le_i32();
+        ctx.builder.gt_i32();
 
-        ctx.builder.and_i32();
+        ctx.builder.or_i32();
     }
 
-    ctx.builder.br_if(cont);
+    ctx.builder.if_void();
 
     if cfg!(feature = "profiler") {
         ctx.builder.get_local(&address_local);
@@ -1047,15 +1043,14 @@ pub fn gen_safe_read_write(
     // safe_read_write_jit_slow
 
     //   entry <- tlb_data[addr >> 12 << 2]
-    //   can_use_fast_path <- entry & MASK == TLB_VALID && (addr & 0xFFF) <= 0x1000 - bytes
-    //   if can_use_fast_path: goto fast
+    //   needs_slow_path <- entry & MASK != TLB_VALID || (addr & 0xFFF) > 0x1000 - bytes
+    //   if !needs_slow_path: goto fast
     //   entry <- safe_read_write_jit_slow(addr, instruction_pointer)
     //   if page_fault: goto exit-with-pagefault
     //   fast: value <- f(mem[(entry & ~0xFFF) ^ addr])
-    //   if !can_use_fast_path { safe_write_jit_slow(addr, value, instruction_pointer) }
+    //   if needs_slow_path { safe_write_jit_slow(addr, value, instruction_pointer) }
     //   mem[(entry & ~0xFFF) ^ addr] <- value
 
-    let cont = ctx.builder.block_void();
     ctx.builder.get_local(address_local);
 
     ctx.builder.const_i32(12);
@@ -1068,26 +1063,29 @@ pub fn gen_safe_read_write(
     let entry_local = ctx.builder.tee_new_local();
 
     ctx.builder.const_i32(
-        (0xFFF & !TLB_GLOBAL & !TLB_NO_EXEC & !(if ctx.cpu.cpl3() { 0 } else { TLB_NO_USER }))
-            as i32,
+        (TLB_VALID
+            | TLB_READONLY
+            | TLB_HAS_CODE
+            | TLB_IN_MAPPED_RANGE
+            | if ctx.cpu.cpl3() { TLB_NO_USER } else { 0 }) as i32,
     );
     ctx.builder.and_i32();
 
     ctx.builder.const_i32(TLB_VALID as i32);
-    ctx.builder.eq_i32();
+    ctx.builder.ne_i32();
 
     if bits != BitSize::BYTE {
         ctx.builder.get_local(&address_local);
         ctx.builder.const_i32(0xFFF);
         ctx.builder.and_i32();
         ctx.builder.const_i32(0x1000 - bits.bytes() as i32);
-        ctx.builder.le_i32();
-        ctx.builder.and_i32();
+        ctx.builder.gt_i32();
+        ctx.builder.or_i32();
     }
 
-    let can_use_fast_path_local = ctx.builder.tee_new_local();
+    let needs_slow_path_local = ctx.builder.tee_new_local();
 
-    ctx.builder.br_if(cont);
+    ctx.builder.if_void();
 
     if cfg!(feature = "profiler") {
         ctx.builder.get_local(&address_local);
@@ -1177,9 +1175,8 @@ pub fn gen_safe_read_write(
         GenSafeReadWriteValue::I32(ctx.builder.set_new_local())
     };
 
-    ctx.builder.get_local(&can_use_fast_path_local);
+    ctx.builder.get_local(&needs_slow_path_local);
 
-    ctx.builder.eqz_i32();
     ctx.builder.if_void();
     {
         ctx.builder.get_local(&address_local);
@@ -1270,7 +1267,7 @@ pub fn gen_safe_read_write(
         GenSafeReadWriteValue::I32(l) => ctx.builder.free_local(l),
         GenSafeReadWriteValue::I64(l) => ctx.builder.free_local_i64(l),
     }
-    ctx.builder.free_local(can_use_fast_path_local);
+    ctx.builder.free_local(needs_slow_path_local);
     ctx.builder.free_local(phys_addr_local);
 }
 

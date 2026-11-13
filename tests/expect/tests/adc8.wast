@@ -66,17 +66,16 @@
               (i32.add
                 (get_local $l8)
                 (i32.const 3)))
-            (set_local $l9
-              (i32.and
-                (call $e.adc8
-                  (i32.and
-                    (get_local $l0)
-                    (i32.const 255))
-                  (i32.const 227))
-                (i32.const 255)))
             (if $I5
               (i32.and
-                (get_local $l9)
+                (tee_local $l9
+                  (i32.and
+                    (call $e.adc8
+                      (i32.and
+                        (get_local $l0)
+                        (i32.const 255))
+                      (i32.const 227))
+                    (i32.const 255)))
                 (i32.const -256))
               (then
                 (unreachable)))
@@ -86,15 +85,14 @@
                 (i32.and
                   (get_local $l0)
                   (i32.const -256))))
-            (set_local $l9
-              (i32.ne
-                (i32.eqz
-                  (i32.load
-                    (i32.const 112)))
-                (i32.const 0)))
             (if $I6
               (i32.and
-                (get_local $l9)
+                (tee_local $l9
+                  (i32.ne
+                    (i32.eqz
+                      (i32.load
+                        (i32.const 112)))
+                    (i32.const 0)))
                 (i32.const -256))
               (then
                 (unreachable)))

@@ -398,10 +398,9 @@ build/capstone-x86.min.js:
 
 build/libwabt.cjs:
 	mkdir -p build
-	wget -nv -P build https://github.com/WebAssembly/wabt/archive/1.0.6.zip
-	unzip -j -d build/ build/1.0.6.zip wabt-1.0.6/demo/libwabt.js
-	mv build/libwabt.js build/libwabt.cjs
-	rm build/1.0.6.zip
+	wget -nv -O build/wabt.tgz https://registry.npmjs.org/wabt/-/wabt-1.0.39.tgz
+	tar xzf build/wabt.tgz -O package/index.js > build/libwabt.cjs
+	rm build/wabt.tgz
 
 build/xterm.js:
 	curl https://cdn.jsdelivr.net/npm/xterm@5.2.1/lib/xterm.min.js > build/xterm.js

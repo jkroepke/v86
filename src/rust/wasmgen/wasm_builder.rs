@@ -72,6 +72,9 @@ pub const WASM_MODULE_ARGUMENT_COUNT: u8 = 1;
 pub struct WasmBuilder {
     output: Vec<u8>,
     instruction_body: Vec<u8>,
+    // End offset and index of the last local.set emitted through this builder.
+    // Checking the offset avoids interpreting an instruction's immediate as an opcode.
+    last_local_set: Option<(usize, u8)>,
 
     idx_import_table_size: usize, // for rewriting once finished
     idx_import_count: usize,      // for rewriting once finished
@@ -119,6 +122,7 @@ impl WasmBuilder {
         let mut b = WasmBuilder {
             output: Vec::with_capacity(256),
             instruction_body: Vec::with_capacity(256),
+            last_local_set: None,
 
             idx_import_table_size: 0,
             idx_import_count: 0,
@@ -163,6 +167,7 @@ impl WasmBuilder {
         self.set_import_table_size(2);
         self.set_import_count(0);
         self.instruction_body.clear();
+        self.last_local_set = None;
         self.free_locals_i32.clear();
         self.free_locals_i64.clear();
         self.local_count = 0;
@@ -586,8 +591,7 @@ impl WasmBuilder {
     #[must_use = "local allocated but not used"]
     pub fn set_new_local(&mut self) -> WasmLocal {
         let local = self.alloc_local();
-        self.instruction_body.push(op::OP_SETLOCAL);
-        self.instruction_body.push(local.idx());
+        self.set_local(&local);
         local
     }
     #[must_use = "local allocated but not used"]
@@ -600,14 +604,22 @@ impl WasmBuilder {
     pub fn set_local(&mut self, local: &WasmLocal) {
         self.instruction_body.push(op::OP_SETLOCAL);
         self.instruction_body.push(local.idx());
+        self.last_local_set = Some((self.instruction_body.len(), local.idx()));
     }
     pub fn tee_local(&mut self, local: &WasmLocal) {
         self.instruction_body.push(op::OP_TEELOCAL);
         self.instruction_body.push(local.idx());
     }
-    pub fn get_local(&mut self, local: &WasmLocal) {
+    pub fn get_local(&mut self, local: &WasmLocal) { self.get_local_by_index(local.idx()); }
+
+    fn get_local_by_index(&mut self, index: u8) {
+        if self.last_local_set.take() == Some((self.instruction_body.len(), index)) {
+            let opcode_offset = self.instruction_body.len() - 2;
+            self.instruction_body[opcode_offset] = op::OP_TEELOCAL;
+            return;
+        }
         self.instruction_body.push(op::OP_GETLOCAL);
-        self.instruction_body.push(local.idx());
+        self.instruction_body.push(index);
     }
 
     #[must_use = "local allocated but not used"]
@@ -633,6 +645,7 @@ impl WasmBuilder {
         let local = self.alloc_local_i64();
         self.instruction_body.push(op::OP_SETLOCAL);
         self.instruction_body.push(local.idx());
+        self.last_local_set = Some((self.instruction_body.len(), local.idx()));
         local
     }
     #[must_use = "local allocated but not used"]
@@ -642,10 +655,7 @@ impl WasmBuilder {
         self.instruction_body.push(local.idx());
         local
     }
-    pub fn get_local_i64(&mut self, local: &WasmLocalI64) {
-        self.instruction_body.push(op::OP_GETLOCAL);
-        self.instruction_body.push(local.idx());
-    }
+    pub fn get_local_i64(&mut self, local: &WasmLocalI64) { self.get_local_by_index(local.idx()); }
 
     pub fn const_i32(&mut self, v: i32) {
         self.instruction_body.push(op::OP_I32CONST);
@@ -1016,7 +1026,7 @@ impl WasmBuilder {
 
 #[cfg(test)]
 mod tests {
-    use super::{FunctionType, WasmBuilder, WASM_MODULE_ARGUMENT_COUNT};
+    use super::{op, FunctionType, WasmBuilder, WASM_MODULE_ARGUMENT_COUNT};
     use std::fs::File;
     use std::io::Write;
 
@@ -1028,6 +1038,62 @@ mod tests {
         assert_eq!(1, w.get_fn_idx("bar", FunctionType::FN1));
         assert_eq!(0, w.get_fn_idx("foo", FunctionType::FN0));
         assert_eq!(2, w.get_fn_idx("baz", FunctionType::FN2));
+    }
+
+    #[test]
+    fn local_tee_folding() {
+        let mut w = WasmBuilder::new();
+        w.const_i32(7);
+        let local = w.set_new_local();
+        w.get_local(&local);
+        w.get_local(&local);
+        w.add_i32();
+        assert_eq!(
+            w.instruction_body,
+            [
+                op::OP_I32CONST,
+                7,
+                op::OP_TEELOCAL,
+                1,
+                op::OP_GETLOCAL,
+                1,
+                op::OP_I32ADD
+            ]
+        );
+        w.drop_();
+
+        // An intervening constant must remain intact, even when a local.set
+        // preceded it.
+        w.const_i32(0);
+        w.set_local(&local);
+        w.const_i64(0x2101);
+        let before = w.instruction_body.clone();
+        w.get_local(&local);
+        assert_eq!(&w.instruction_body[..before.len()], &before);
+        w.drop_();
+        w.drop_();
+
+        // Do not fold across a branch target, or into the next function.
+        w.const_i32(1);
+        w.if_void();
+        w.const_i32(2);
+        w.set_local(&local);
+        w.block_end();
+        let before = w.instruction_body.clone();
+        w.get_local(&local);
+        assert_eq!(&w.instruction_body[..before.len()], &before);
+        w.drop_();
+        w.free_local(local);
+        w.finish();
+        w.reset();
+
+        w.const_i64(8);
+        let local = w.set_new_local_i64();
+        w.get_local_i64(&local);
+        assert_eq!(w.instruction_body, [op::OP_I64CONST, 8, op::OP_TEELOCAL, 1]);
+        w.drop_();
+        w.free_local_i64(local);
+        w.finish();
     }
 
     #[test]
