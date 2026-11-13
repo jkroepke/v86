@@ -76,7 +76,30 @@ time goes.
   15 % main_loop (dispatch into modules), 15 % interpreter.
 - SSE/MMX is 0.2-0.3 % of the instructions of these workloads and the
   kernel runs none; newer SSE/AVX levels do not help them.
-- Generated wasm: spring compiles ~218 MB of JIT modules (~175 KB each).
+- Generated wasm: spring compiled ~111 MB of JIT modules in a release
+  build with up to 3 pages per module (profiler builds make ~2x the bytes).
+
+## Compiling the JIT modules (measured 2026-11-13)
+
+- V8 compiles each module with Liftoff, then recompiles hot functions
+  with TurboFan on background threads (dynamic tiering). Almost every
+  module of spring gets hot: TurboFan was ~60 % of the CPU time of the
+  process (`node --liftoff-only`: process 310 -> 117 s, main thread only
+  +0-3 %; `--wasm-tiering-budget` 10x/100x: -10/-15 %). These threads
+  share the cores with the other pods of a tab, and a page cannot set V8
+  flags: what v86 controls is the size and the number of modules.
+- TurboFan costs ~1.3-2.5 us per wasm byte and grows faster than the
+  function (17 KB: 0.7 us/B, 170 KB: 2.5 us/B); Liftoff ~0.03 us/B.
+  Hence one page per module (`set_jit_config(1, n)` sets more).
+- Dead ends: no two modules have the same bytes (a cache by content is
+  useless); a back-off for pages that are compiled again (threshold <<
+  n) cut nothing, the pages really have new hot code; 55 % of the bytes
+  of a module never run in its life, but the interpreter runs through
+  jumps, so it cannot tell which blocks ran; a module for only the new
+  entry points of a page would save ~16 % of the bytes (profiler
+  counters RECOMPILE_*), not done.
+- Measure process CPU, not only the main thread: `tools/pod-bench`
+  reports the main thread; read `/proc/self/stat` for all threads.
 
 ## Instruction set extensions: what pays (measured 2026-11-13)
 
@@ -138,5 +161,12 @@ time goes.
 - More Wasm SIMD in the JIT (pshufb, palignr, padd, psub, pcmpgt, shifts by
   immediate), and MMX quadword instructions as i64 code (32-bit OpenSSL
   does SHA-512 and RSA in mm registers).
+
+- JIT modules of one page (was up to 3), a table of 3000 modules (was
+  900), and a full table drops the least entered half of the modules
+  instead of all. Process CPU (all threads): spring -39 %, goapp -30 %,
+  cpu and nginx -25 %; main thread the same or faster; peak RSS of spring
+  1108 -> 770 MiB. Profiler counters for compiled, recompiled and cold
+  code (`profiler_flush()` before reading them).
 
 Work in progress lives on `wip/*` and `codex/*` branches.
