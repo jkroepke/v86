@@ -61,6 +61,23 @@ Statnames for this branch: /home/claude/bench/compile/statnames.json.
 - running: compile/ab-spring1.out (base vs 1=1 vs 1=1 + table 3000),
   compile/small-*.out (nginx/cpu/goapp default vs 1=1)
 
+- small workloads, Node, 10 rounds, default vs 1=1 (main / process s,
+  median): nginx 0.84/4.44 -> 0.82/3.20; cpu 6.04/15.18 -> 5.98/11.09
+  (peak RSS 369 -> 296 MiB); goapp 3.39/17.01 -> 2.75/11.33 (577 -> 413 MiB).
+- Chrome 153 (bench/pw-c.cjs, port 8096 server compile/server-c.cjs, whole
+  browser CPU incl. boot): cpu 43.1/44.6 -> 34.2/34.4 s, wall median
+  13.9/14.1 -> 11.1/9.3 s; nginx 19.1/19.7 -> 15.6/14.7 s, wall 2.0/2.3 ->
+  1.44/1.38 s.
+- offline TF (cpu workload modules): 3 pages 6.09 MB 9.8-10.3 s; 1 page
+  4.43 MB 5.8-6.4 s. codex (1 page) 4.22 MB 5.4-6.2 s (~-5..8 %).
+- MAX_PAGES default 1; eviction of the least entered half instead of clearing
+  everything when the table is full (build compile/ev); back-off removed.
+- rebased on origin/master f9c8dbc; worktree /home/claude/v86-compile-cx =
+  compile + codex commits (clean cherry-pick), build compile/newcx;
+  origin/master build compile/mst.
+- tests on compile (rebased): rust-test ok; nasmtests running;
+  expect-tests need wabt (codex Makefile fetches it from npm).
+
 ## Next
 - tiering flags on spring (compile/tier.sh -> compile/tier.out)
 - spring STATS run (compile/stats-spring.txt)
