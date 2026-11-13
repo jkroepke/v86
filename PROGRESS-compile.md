@@ -78,6 +78,16 @@ Statnames for this branch: /home/claude/bench/compile/statnames.json.
 - tests on compile (rebased): rust-test ok; nasmtests running;
   expect-tests need wabt (codex Makefile fetches it from npm).
 
+- FINAL A/B (compile/final-*.out; mst = origin/master, new = this branch,
+  newcx = + codex): spring main/process 90.1/263.4 -> 86.5/159.5 (newcx
+  83.2/155.7); goapp 2.51/12.50 -> 2.12/8.79 (8.91); cpu 5.62/13.90 ->
+  5.51/10.44 (10.38); nginx 0.75/3.75 -> 0.74/2.83 (2.83). Codex adds
+  nothing measurable on top -> not merged.
+- final commits on branch compile-final2 (worktree /home/claude/v86-compile-final2):
+  counters, one page + 3000 table + eviction (+ expect constants), AGENTS.md.
+  Expect tests: master's snapshots fail with the only wabt we can fetch
+  (1.0.39) for unrelated formatting; constants verified with codex run.js.
+
 ## Next
 - tiering flags on spring (compile/tier.sh -> compile/tier.out)
 - spring STATS run (compile/stats-spring.txt)
