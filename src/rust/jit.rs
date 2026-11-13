@@ -62,6 +62,24 @@ pub fn jit_clear_func(wasm_table_index: WasmTableIndex) {
 
 static mut JIT_DISABLED: bool = false;
 
+// The bookkeeping after every block of the interpreter (jit_increase_hotness_and_maybe_compile)
+// must be cheap, so its hot part does not use the maps of JitState:
+// - The hotness of every physical page, in a flat array. It is 0 for a page that is not in
+//   JitState::entry_points. The array is 4 MiB of address space, but only the parts for pages
+//   with code are ever touched.
+// - A direct mapped cache of physical addresses that are in the entry point set of their page.
+//   jit_dirty_page removes the addresses of a page when it drops the set.
+static mut PAGE_HOTNESS: [u32; 0x100000] = [0; 0x100000];
+const KNOWN_ENTRY_POINTS_SIZE: usize = 0x2000;
+// The cache holds the inverted address, so that the array is all zero at the start (no data in
+// the wasm file). 0 is no entry point: the last bytes of a page are never recorded.
+static mut KNOWN_ENTRY_POINTS: [u32; KNOWN_ENTRY_POINTS_SIZE] = [0; KNOWN_ENTRY_POINTS_SIZE];
+
+#[inline(always)]
+fn known_entry_point_index(phys_address: u32) -> usize {
+    (phys_address ^ phys_address >> 13) as usize & (KNOWN_ENTRY_POINTS_SIZE - 1)
+}
+
 // Maximum number of pages per wasm module. Necessary for the following reasons:
 // - There is an upper limit on the size of a single function in wasm (currently ~7MB in all browsers)
 //   See https://github.com/WebAssembly/design/issues/1138
@@ -134,7 +152,8 @@ struct JitState {
     // (faster, but uses much more memory)
     // or a compressed bitmap (likely faster)
     // or HashSet<u32> rather than nested
-    entry_points: HashMap<Page, (u32, HashSet<u16>)>,
+    // The hotness of a page is in PAGE_HOTNESS
+    entry_points: HashMap<Page, HashSet<u16>>,
     pages: HashMap<Page, PageInfo>,
     wasm_table_index_free_list: Vec<WasmTableIndex>,
     compiling: Option<(WasmTableIndex, CompilingPageState)>,
@@ -465,7 +484,7 @@ fn jit_find_basic_blocks(
 
         if !pages.contains(&phys_page) {
             // page seen for the first time, handle entry points
-            if let Some((hotness, entry_points)) = ctx.entry_points.get_mut(&phys_page) {
+            if let Some(entry_points) = ctx.entry_points.get_mut(&phys_page) {
                 let existing_entry_points = match ctx.pages.get(&phys_page) {
                     Some(PageInfo { entry_points, .. }) => {
                         HashSet::from_iter(entry_points.iter().map(|x| x.0))
@@ -488,7 +507,7 @@ fn jit_find_basic_blocks(
                 //    entry_points.union(&existing_entry_points).count() == entry_points.len()
                 //);
 
-                *hotness = 0;
+                unsafe { PAGE_HOTNESS[phys_page.to_u32() as usize] = 0 };
 
                 for &addr_low in entry_points.iter() {
                     let addr = virt_target & !0xFFF | addr_low as i32;
@@ -851,7 +870,7 @@ fn jit_analyze_and_generate(
 
     dbg_assert!(ctx.compiling.is_none());
 
-    let (_, entry_points) = match ctx.entry_points.get(&page) {
+    let entry_points = match ctx.entry_points.get(&page) {
         None => return,
         Some(entry_points) => entry_points,
     };
@@ -1036,9 +1055,7 @@ fn jit_analyze_and_generate(
             entry_points: Vec::new(),
             hidden_wasm_table_indices: Vec::new(),
         });
-        ctx.entry_points
-            .entry(p)
-            .or_insert_with(|| (0, HashSet::default()));
+        ctx.entry_points.entry(p).or_insert_with(|| HashSet::default());
     }
     for &(addr, state) in &entries {
         let code = page_info.get_mut(&Page::page_of(addr)).unwrap();
@@ -2175,22 +2192,30 @@ pub fn jit_increase_hotness_and_maybe_compile(
         return;
     }
 
-    let mut ctx = get_jit_state();
-    let is_compiling = ctx.compiling.is_some();
     let page = Page::page_of(phys_address);
-    let (hotness, entry_points) = ctx.entry_points.entry(page).or_insert_with(|| {
-        cpu::tlb_set_has_code(page, true);
-        profiler::stat_increment(stat::RUN_INTERPRETED_NEW_PAGE);
-        (0, HashSet::default())
-    });
+    let hotness = unsafe { &mut PAGE_HOTNESS[page.to_u32() as usize] };
+    let known = unsafe { &mut KNOWN_ENTRY_POINTS[known_entry_point_index(phys_address)] };
 
-    if !is_near_end_of_page(phys_address) {
-        entry_points.insert(phys_address as u16 & 0xFFF);
+    // Most blocks start at an entry point that is already in the set of its page: then only
+    // the hotness changes, and that needs neither the lock nor the maps.
+    if *known != !phys_address {
+        let mut ctx = get_jit_state();
+        let entry_points = ctx.entry_points.entry(page).or_insert_with(|| {
+            cpu::tlb_set_has_code(page, true);
+            profiler::stat_increment(stat::RUN_INTERPRETED_NEW_PAGE);
+            HashSet::default()
+        });
+
+        if !is_near_end_of_page(phys_address) {
+            entry_points.insert(phys_address as u16 & 0xFFF);
+            *known = !phys_address;
+        }
     }
 
     *hotness += heat;
     if *hotness >= unsafe { JIT_THRESHOLD } {
-        if is_compiling {
+        let mut ctx = get_jit_state();
+        if ctx.compiling.is_some() {
             return;
         }
         // only try generating if we're in the correct address space
@@ -2322,7 +2347,17 @@ fn jit_dirty_page_ctx(ctx: &mut JitState, page: Page) {
 
     match ctx.entry_points.remove(&page) {
         None => {},
-        Some(_) => {
+        Some(entry_points) => {
+            unsafe {
+                PAGE_HOTNESS[page.to_u32() as usize] = 0;
+                for addr_low in entry_points {
+                    let addr = page.to_address() | addr_low as u32;
+                    let known = &mut KNOWN_ENTRY_POINTS[known_entry_point_index(addr)];
+                    if *known == !addr {
+                        *known = 0;
+                    }
+                }
+            }
             profiler::stat_increment(stat::INVALIDATE_PAGE_HAD_ENTRY_POINTS);
             did_have_code = true;
 
