@@ -174,12 +174,16 @@ export async function run(o) {
   const res = [];
   for (let i = 0; i < o.rounds; i++) {
     await o.hook?.(i, "start");
+    // o.pcpu: CPU time of all threads. V8 compiles wasm on background threads, and a compile
+    // that a round started may end in the next one: compare medians of several rounds.
+    const p0 = o.pcpu?.() ?? 0;
     const r = await pod(b.state, o.workload);
+    r.pcpu = (o.pcpu?.() ?? 0) - p0;
     await o.hook?.(i, "end");
     res.push(r);
-    log(`${o.workload} round ${i}: restore ${r.restore.toFixed(0)} ms, started ${r.started.toFixed(0)} ms, done ${r.done.toFixed(0)} ms, cpu ${r.cpu.toFixed(0)} ms, ${r.minstr.toFixed(1)}M instr, ${(r.minstr / r.done * 1000).toFixed(1)}M instr/s`);
+    log(`${o.workload} round ${i}: restore ${r.restore.toFixed(0)} ms, started ${r.started.toFixed(0)} ms, done ${r.done.toFixed(0)} ms, cpu ${r.cpu.toFixed(0)} ms${o.pcpu ? `, process cpu ${r.pcpu.toFixed(0)} ms` : ""}, ${r.minstr.toFixed(1)}M instr, ${(r.minstr / r.done * 1000).toFixed(1)}M instr/s`);
   }
   const med = (a) => a.slice().sort((x, y) => x - y)[a.length >> 1];
-  if (res.length)   log(`MEDIAN ${o.workload}: done ${med(res.map((r) => r.done)).toFixed(0)} ms, cpu ${med(res.map((r) => r.cpu)).toFixed(0)} ms, started ${med(res.map((r) => r.started)).toFixed(0)} ms, ${med(res.map((r) => r.minstr)).toFixed(1)}M instr, ${med(res.map((r) => r.minstr / r.done * 1000)).toFixed(1)} Mips`);
+  if (res.length)   log(`MEDIAN ${o.workload}: done ${med(res.map((r) => r.done)).toFixed(0)} ms, cpu ${med(res.map((r) => r.cpu)).toFixed(0)} ms${o.pcpu ? `, process cpu ${med(res.map((r) => r.pcpu)).toFixed(0)} ms` : ""}, started ${med(res.map((r) => r.started)).toFixed(0)} ms, ${med(res.map((r) => r.minstr)).toFixed(1)}M instr, ${med(res.map((r) => r.minstr / r.done * 1000)).toFixed(1)} Mips`);
   return res;
 }

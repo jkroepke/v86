@@ -35,13 +35,17 @@ if (process.env.PROF) {
     }
   };
 }
-// CPU time of the main thread (Linux): less noisy than wall time when other processes run
-const cpu = () => {
+// CPU time of the main thread (Linux): less noisy than wall time when other processes run.
+// PCPU=1 adds the CPU time of the whole process: V8 compiles the JIT modules of v86 on
+// background threads, which can be more CPU time than the main thread uses.
+const cpuOf = (file) => () => {
   try {
-    const f = fs.readFileSync(`/proc/self/task/${process.pid}/stat`, "utf8").split(") ")[1].split(" ");
+    const f = fs.readFileSync(file, "utf8").split(") ")[1].split(" ");
     return (Number(f[11]) + Number(f[12])) * 10;
   } catch { return 0; }
 };
+const cpu = cpuOf(`/proc/self/task/${process.pid}/stat`);
+const pcpu = process.env.PCPU === "1" ? cpuOf("/proc/self/stat") : undefined;
 // STATS=1 with a profiler build (make with-profiler) prints the counters of src/rust/profiler.rs
 let stats;
 if (process.env.STATS === "1") {
@@ -51,7 +55,7 @@ if (process.env.STATS === "1") {
 const springJSON = path.join(DATA, "spring.json");
 await run({
   spring: fs.existsSync(springJSON) ? JSON.parse(fs.readFileSync(springJSON)) : null,
-  hook, cpu, stats, mods, v86dir: V86DIR, read, workload, rounds: Number(rounds),
+  hook, cpu, pcpu, stats, mods, v86dir: V86DIR, read, workload, rounds: Number(rounds),
   jitcfg: process.env.JITCFG, cpuhide: process.env.CPUHIDE, script: process.env.SCRIPT,
   v86opts: process.env.V86OPTS && JSON.parse(process.env.V86OPTS), log: console.log,
 });
