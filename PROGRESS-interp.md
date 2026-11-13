@@ -32,3 +32,15 @@ Temporary file for a relaunched helper. Remove it before the final commits.
   callgrind running -> scratchpad icg-r4.txt. Decide: inline immediates worth 34 KB?
 - r5 = r3 + hotness commit (PAGE_HOTNESS flat array + KNOWN_ENTRY_POINTS cache in jit.rs):
   2057738 bytes; callgrind running -> icg-r5.txt. Tests not run yet on any of it.
+
+## Update 13:25 (relaunched helper)
+- Tests PASS on 0b-tip (r6 = r5 + raw pointers for the hotness statics, same wasm size +3 bytes):
+  make all-debug; nasmtests 15600/15600; nasmtests-force-jit 15600/15600; rust-test ok.
+  (A truncated fixture tests/nasm/build/gen_660f67_0_9.fixture broke the first run: delete
+  fixtures without "END JSON" and rerun.)
+- callgrind is useless at load 20 (the nginx round times out). Use bench/ipair.mjs (paired, one process).
+- ipair nginx 14 pairs, JIT on, cpu ratio vs v86-m2: r2 0.83, r4 0.86, r3 0.84, r6 0.775
+  -> hotness commit stays (-8 %). Inline immediates: running r4 vs r3 with JITCFG=0=1 and goapp
+  (scratchpad pair-imm-*.txt). If < 2 % gain: drop the inlining (keep the rest of commit 3 = r4).
+- Then: squash WIP commits, messages with numbers, drop this file, rebase on origin/master,
+  final numbers (nginx, cpu, goapp, spring) with ipair vs /home/claude/bench/v86-m2, push to master.
