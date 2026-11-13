@@ -25,5 +25,9 @@ base = origin/master cbac223.
 - threshold (c1): 100k worse everywhere; 400k: goapp process 6.81 -> 4.74, nginx 2.46 -> 1.51,
   cpu same, main same. Running: spring 400k, goapp/nginx 800k (cold/thr*-*.out).
 
+- threshold experiments on c1 overtaken: master 61a717b raised JIT_THRESHOLD to 750k.
+  Rebased onto 61a717b (conflict in jit_run_interpreted resolved). Builds: cold/m2 (master),
+  cold/c2 (rebased). Running A/B m2 vs c2 (cold/ab2-*.out).
+
 ## Next
 - profiler stats (cold edges, evictions, bytes), goapp, spring, A/B
