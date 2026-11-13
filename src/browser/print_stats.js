@@ -139,6 +139,22 @@ function print_misc_stats(cpu)
 
     text += "\n";
 
+    const condition_get = cpu.wm.exports["profiler_condition_get"];
+    if(condition_get)
+    {
+        const producers = ["OTHER", "CMP", "SUB", "DEC", "ADD", "INC", "ADC_SBB", "SHIFT", "BITWISE"];
+        const conditions = ["O", "NO", "B", "AE", "Z", "NZ", "BE", "A", "S", "NS", "P", "NP", "L", "GE", "LE", "G"];
+        for(let previous = 0; previous < producers.length; previous++)
+        {
+            for(let condition = 0; condition < conditions.length; condition++)
+            {
+                const count = condition_get(previous, condition);
+                if(count) text += "CONDITION_PAIR_" + producers[previous] + "_" + conditions[condition] + "=" + count + "\n";
+            }
+        }
+        text += "\n";
+    }
+
     const tlb_entries = cpu.wm.exports["get_valid_tlb_entries_count"]();
     const global_tlb_entries = cpu.wm.exports["get_valid_global_tlb_entries_count"]();
     const nonglobal_tlb_entries = tlb_entries - global_tlb_entries;

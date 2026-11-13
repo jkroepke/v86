@@ -317,14 +317,24 @@ pub fn jit_add_seg_offset_no_override(ctx: &mut JitContext, seg: u32) {
             ctx.builder.call_fn1("log_segment_null");
         }
 
-        ctx.builder
-            .load_fixed_u8(global_pointers::get_segment_is_null_offset(seg));
+        if let (GS, Some(local)) = (seg, &ctx.gs_is_null) {
+            ctx.builder.get_local(local);
+        }
+        else {
+            ctx.builder
+                .load_fixed_u8(global_pointers::get_segment_is_null_offset(seg));
+        }
         ctx.builder.if_void();
         codegen::gen_trigger_gp(ctx, 0);
         ctx.builder.block_end();
     }
 
-    ctx.builder
-        .load_fixed_i32(global_pointers::get_seg_offset(seg));
+    if let (GS, Some(local)) = (seg, &ctx.gs_base) {
+        ctx.builder.get_local(local);
+    }
+    else {
+        ctx.builder
+            .load_fixed_i32(global_pointers::get_seg_offset(seg));
+    }
     ctx.builder.add_i32();
 }

@@ -94,6 +94,16 @@ pub fn jit_handle_prefix(ctx: &mut JitContext, instr_flags: &mut u32) {
 
 pub fn jit_handle_segment_prefix(segment: u32, ctx: &mut JitContext, instr_flags: &mut u32) {
     dbg_assert!(segment <= 5);
+    // Prefix decoding is unconditional, even for instructions whose memory
+    // access is conditional. These loads therefore dominate all uses below.
+    if segment == GS && ctx.gs_base.is_none() {
+        ctx.builder
+            .load_fixed_i32(global_pointers::get_seg_offset(GS));
+        ctx.gs_base = Some(ctx.builder.set_new_local());
+        ctx.builder
+            .load_fixed_u8(global_pointers::get_segment_is_null_offset(GS));
+        ctx.gs_is_null = Some(ctx.builder.set_new_local());
+    }
     ctx.cpu.prefixes = ctx.cpu.prefixes & !PREFIX_MASK_SEGMENT | (segment as u8 + 1);
     jit_handle_prefix(ctx, instr_flags)
 }
@@ -2598,12 +2608,24 @@ fn gen_not32(ctx: &mut JitContext, dest_operand: &WasmLocal) {
 }
 
 fn gen_neg16(ctx: &mut JitContext, dest_operand: &WasmLocal) {
+    ctx.current_instruction = Instruction::Sub {
+        dest: InstructionOperandDest::Other,
+        source: InstructionOperand::Other,
+        opsize: OPSIZE_16,
+        is_dec: false,
+    };
     let builder = &mut ctx.builder;
     builder.get_local(dest_operand);
     builder.call_fn1_ret("neg16");
     codegen::gen_set_reg16_local(builder, dest_operand);
 }
 fn gen_neg32(ctx: &mut JitContext, dest_operand: &WasmLocal) {
+    ctx.current_instruction = Instruction::Sub {
+        dest: local_to_instruction_operand(ctx, dest_operand),
+        source: InstructionOperand::Other,
+        opsize: OPSIZE_32,
+        is_dec: false,
+    };
     let builder = &mut ctx.builder;
     builder.const_i32(global_pointers::last_op1 as i32);
     builder.const_i32(0);

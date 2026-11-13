@@ -123,6 +123,21 @@ pub enum stat {
 #[allow(non_upper_case_globals)]
 pub static mut stat_array: [u64; 500] = [0; 500];
 
+// Rows: other, cmp, sub, dec, add, inc, adc/sbb, nonzero shift, bitwise.
+// Columns are the low four bits of the x86 condition code.
+#[allow(non_upper_case_globals)]
+pub static mut condition_array: [u64; 9 * 16] = [0; 9 * 16];
+
+#[no_mangle]
+pub fn profiler_condition_get(previous: u32, condition: u32) -> f64 {
+    if cfg!(feature = "profiler") && previous < 9 && condition < 16 {
+        unsafe { condition_array[(previous * 16 + condition) as usize] as f64 }
+    }
+    else {
+        0.0
+    }
+}
+
 pub fn stat_increment(stat: stat) { stat_increment_by(stat, 1); }
 
 pub fn stat_increment_by(stat: stat, by: u64) {
@@ -134,6 +149,10 @@ pub fn stat_increment_by(stat: stat, by: u64) {
 #[no_mangle]
 pub fn profiler_init() {
     unsafe {
+        #[allow(static_mut_refs)]
+        for x in condition_array.iter_mut() {
+            *x = 0
+        }
         #[allow(static_mut_refs)]
         for x in stat_array.iter_mut() {
             *x = 0
