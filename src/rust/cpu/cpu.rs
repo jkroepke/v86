@@ -2346,7 +2346,7 @@ pub unsafe fn do_page_walk(
 pub unsafe fn full_clear_tlb() {
     profiler::stat_increment(stat::FULL_CLEAR_TLB);
     // clear tlb including global pages
-    *last_virt_eip = -1;
+    invalidate_eip_translation();
     for i in 0..valid_tlb_entries_count {
         let page = valid_tlb_entries[i as usize];
         clear_tlb_code(page);
@@ -2366,7 +2366,7 @@ pub unsafe fn full_clear_tlb() {
 pub unsafe fn clear_tlb() {
     profiler::stat_increment(stat::CLEAR_TLB);
     // clear tlb excluding global pages
-    *last_virt_eip = -1;
+    invalidate_eip_translation();
     let mut global_page_offset = 0;
     for i in 0..valid_tlb_entries_count {
         let page = valid_tlb_entries[i as usize];
@@ -2612,6 +2612,10 @@ unsafe fn read_imm8_slow() -> i64 {
         Ok(phys) => {
             *eip_phys = (phys ^ eip as u32) as i32;
             *last_virt_eip = eip & !0xFFF;
+            // The instruction goes on in another page, or the translation was dropped in the
+            // middle of the instruction: the block of the interpreter ends after it (the loop
+            // relies on the translation of the page of its block)
+            jit_block_boundary |= BLOCK_BOUNDARY;
         },
     }
     dbg_assert!(!memory::in_mapped_range((*eip_phys ^ eip) as u32));
@@ -3086,7 +3090,16 @@ pub unsafe fn load_pdpte(cr3: i32) {
     }
 }
 
-pub unsafe fn cpl_changed() { *last_virt_eip = -1 }
+pub unsafe fn cpl_changed() { invalidate_eip_translation() }
+
+// The translation of the code page (eip_phys, last_virt_eip) is not valid anymore. The loop of
+// the interpreter does not check last_virt_eip for every instruction: its block ends here, and
+// the next block translates again.
+#[inline(always)]
+pub unsafe fn invalidate_eip_translation() {
+    *last_virt_eip = -1;
+    jit_block_boundary |= BLOCK_BOUNDARY;
+}
 
 pub unsafe fn update_cs_size(new_size: bool) {
     if *is_32 != new_size {
@@ -3220,13 +3233,12 @@ pub unsafe fn modrm_resolve(modrm_byte: i32) -> OrPageFault<i32> {
 unsafe fn modrm_resolve_packed(modrm_byte: i32) -> i64 {
     dbg_assert!(modrm_byte < 0xC0);
     // Fast path: 32-bit addresses, no segment prefix, and the sib byte and the displacement (at
-    // most 5 bytes, and the 4 bytes that are always read for the displacement) are in the code
-    // page of the last translation. Everything else, and every case that can fault, takes the
-    // general path below; nothing is changed before that.
+    // most 5 bytes) are in the code page of the last translation. Everything else, and every case
+    // that can fault, takes the general path below; nothing is changed before that.
     let eip = *instruction_pointer;
     if *is_32
         && *prefixes & (prefix::PREFIX_MASK_SEGMENT | prefix::PREFIX_MASK_ADDRSIZE) == 0
-        && ((eip ^ *last_virt_eip) as u32) < 0x1000 - 9
+        && ((eip ^ *last_virt_eip) as u32) < 0x1000 - 5
     {
         let mut code = (*eip_phys ^ eip) as u32;
         let rm = modrm_byte & 7;
@@ -3259,21 +3271,27 @@ unsafe fn modrm_resolve_packed(modrm_byte: i32) -> i64 {
                 addr += read_reg32(index) << (sib_byte >> 6 & 3);
             }
         }
-        else if modrm_byte & 0xC7 == 5 {
-            addr = memory::read32_no_mmap_check(code);
-            code += 4;
-        }
-        else {
-            addr = read_reg32(rm);
-            if rm == 5 {
+        else if rm == 5 {
+            if mode == 0 {
+                addr = memory::read32_no_mmap_check(code);
+                code += 4;
+            }
+            else {
+                addr = read_reg32(EBP);
                 seg = SS;
             }
         }
-        // The displacement without a branch (the mode of an instruction is hard to predict):
-        // the 4 bytes are in the page, see above
-        let d = memory::read32_no_mmap_check(code);
-        addr += if mode == 1 { d << 24 >> 24 } else if mode == 2 { d } else { 0 };
-        code += ((mode | mode << 1) & 5) as u32;
+        else {
+            addr = read_reg32(rm);
+        }
+        if mode == 1 {
+            addr += memory::read8_no_mmap_check(code) << 24 >> 24;
+            code += 1;
+        }
+        else if mode == 2 {
+            addr += memory::read32_no_mmap_check(code);
+            code += 4;
+        }
         if !*segment_is_null.offset(seg as isize) {
             *instruction_pointer = eip + (code - (*eip_phys ^ eip) as u32) as i32;
             return (addr + *segment_offsets.offset(seg as isize)) as u32 as i64;
@@ -3338,12 +3356,9 @@ pub unsafe fn interpreter_loop_next(state: &mut InterpreterLoop) -> Option<u32> 
     }
 
     *previous_ip = eip;
-    if state.page != *last_virt_eip {
-        // an instruction that crossed the end of the page and jumped back
-        if !interpreter_loop_translate(eip) {
-            return None;
-        }
-    }
+    // Whatever changes the translation of the code page ends the block (jit_block_boundary):
+    // an instruction that crosses the end of the page, a flushed TLB, a new privilege level
+    dbg_assert!(state.page == *last_virt_eip);
     let phys_addr = (*eip_phys ^ eip) as u32;
     dbg_assert!(!memory::in_mapped_range(phys_addr));
 
@@ -3374,18 +3389,6 @@ unsafe fn record_opstat_interpreted(phys_addr: u32) {
     }
 }
 
-#[cold]
-#[inline(never)]
-unsafe fn interpreter_loop_translate(eip: i32) -> bool {
-    match translate_address_fetch(eip) {
-        Ok(phys) => {
-            *eip_phys = (phys ^ eip as u32) as i32;
-            *last_virt_eip = eip & !0xFFF;
-            true
-        },
-        Err(()) => false,
-    }
-}
 pub unsafe fn run_instruction0f_16(opcode: i32) { gen::interpreter0f::run(opcode as u32) }
 pub unsafe fn run_instruction0f_32(opcode: i32) { gen::interpreter0f::run(opcode as u32 | 0x100) }
 
@@ -4822,7 +4825,7 @@ pub unsafe fn invlpg(addr: i32) {
     // This however means that valid_tlb_entries can contain some invalid entries
     clear_tlb_code(page);
     tlb_data[page as usize] = 0;
-    *last_virt_eip = -1;
+    invalidate_eip_translation();
 }
 
 #[no_mangle]
