@@ -79,5 +79,15 @@ time goes.
 - Reuse of lazy flags in the JIT (conditions after mov/lea/inc/add/...,
   GS base cached per basic block).
 - `tools/pod-bench` and this file.
+- Interpreter (2026-11-13): helpers return an i64 instead of a `Result`
+  through the shadow stack; the loop over the instructions of a block is
+  inside the generated `interpreter::run`; the modrm byte, immediate values
+  and a modrm fast path are inlined (+34 KB of wasm for the immediates,
+  -4 % CPU, kept on purpose); `safe_read*`/`safe_write*` have a TLB fast
+  path. The hotness of pages is a flat array with a cache of known entry
+  points (`PAGE_HOTNESS`, `KNOWN_ENTRY_POINTS` in `jit.rs`) instead of a
+  lock and two maps per interpreted block. CPU time of the main thread,
+  paired runs: nginx -22 % (JIT off -31 %), goapp -24 %, cpu -3 % (noise).
+  v86.wasm 2012667 -> 2057741 bytes.
 
 Work in progress lives on `wip/*` and `codex/*` branches.
