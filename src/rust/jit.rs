@@ -2696,28 +2696,31 @@ pub fn jit_dirty_cache(start_addr: u32, end_addr: u32) {
 }
 
 #[no_mangle]
-/// Instructions (physical address) whose access missed the page of its group, and how often.
-/// At MEM_GROUP_MISS_LIMIT the page is compiled again, and the instruction checks the TLB
-/// itself (codegen::MemGroup): a structure across a page boundary would bail every time.
-static mut MEM_GROUP_MISSES: Option<HashMap<u32, u32>> = None;
-const MEM_GROUP_MISS_LIMIT: u32 = 8;
+/// Pages with accesses outside the page of their group (codegen::MemGroup), and how often.
+/// At MEM_GROUP_MISS_LIMIT the page is compiled again without groups: a structure across a
+/// page boundary would bail every time. Per page, so a page is compiled again at most once.
+static mut MEM_GROUP_MISSES: Option<HashMap<Page, u32>> = None;
+const MEM_GROUP_MISS_LIMIT: u32 = 32;
 
 pub fn mem_group_missed(phys_addr: u32) {
+    let page = Page::page_of(phys_addr);
     #[allow(static_mut_refs)]
     let m = unsafe { MEM_GROUP_MISSES.get_or_insert_with(HashMap::default) };
-    let n = m.entry(phys_addr).or_insert(0);
+    let n = m.entry(page).or_insert(0);
     *n += 1;
     if *n == MEM_GROUP_MISS_LIMIT {
         profiler::stat_increment(stat::MEM_GROUP_RECOMPILE);
-        jit_dirty_page(Page::page_of(phys_addr));
+        jit_dirty_page(page);
     }
 }
 
-/// Whether the instruction at this physical address must check the TLB itself
+/// Whether the code of this page checks the TLB for every access
 pub fn mem_group_disabled(phys_addr: u32) -> bool {
     #[allow(static_mut_refs)]
     match unsafe { MEM_GROUP_MISSES.as_ref() } {
-        Some(m) => m.get(&phys_addr).map_or(false, |&n| n >= MEM_GROUP_MISS_LIMIT),
+        Some(m) => m
+            .get(&Page::page_of(phys_addr))
+            .map_or(false, |&n| n >= MEM_GROUP_MISS_LIMIT),
         None => false,
     }
 }

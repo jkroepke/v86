@@ -16,3 +16,7 @@ Base: origin/master 19aedc1. Builds in /home/claude/bench/j3/{base,...}. Scripts
   bails with jit_bailed=2, after 8 misses at an instruction its page is dirtied and that
   instruction checks the TLB itself. cpu misses 372k -> 120, 15 recompiles; 33 % of accesses grouped
 - A/B harness: /home/claude/bench/j3/ab.sh (tools/pod-bench, data links in j3/data), j3/med.py
+- mg5 (per-page miss feedback, 32 misses): spring 3 pairs base2 61.7/79.6 s vs mg5 61.9/84.3 s
+  (main/process); stats: 464 group recompiles, 7 % grouped -> parked
+- nomu (no MODULE_USE counter): spring 60.8 -> 59.6 s main (noise) -> not pursued
+- DONE: findings in AGENTS.md on master 8f601ef (doc only, no dist)
