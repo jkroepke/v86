@@ -35,7 +35,10 @@ Scripts: jm/ab.sh (alternating runs), jm/med.py (medians), jm/perf.sh, jm/perfj.
 - tests on e5 code: nasmtests 15613/15613, force-jit 15613/15613 (fixtures copied from
   v86-cold: same .asm), rust-test ok
 - e6: one shared bail block per module (site: set local + br) to cut the bytes
-- running: e5 vs e6 spring, base/e5/e6 cpu glibc goapp (jm/out/e6-*.txt)
+- e6 vs e5 spring: 62.4/80.3 -> 61.3/78.2 s, JIT bytes 28.0 -> 22.6 MB
+- base vs e6: spring 75.5/106.7 -> 59.3/76.0 s; cpu 5.58/7.63 -> 4.76/6.00; glibc 5.34/8.35 ->
+  4.76/6.72; goapp 1.98/3.39 -> 1.93/2.75; nginx 0.70/1.05 -> 0.67/0.98
+- DONE: master 2d86538 (+ 19aedc1 doc fix), dist d07236b (0.5.81-fork.2d8653814d64)
 
 ## Next
 - tests (all-debug, nasmtests, nasmtests-force-jit, rust-test, expect-tests update), merge, dist
