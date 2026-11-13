@@ -20,8 +20,14 @@ Scripts: jm/ab.sh (alternating runs), jm/med.py (medians), jm/perf.sh, jm/perfj.
 - e12: + inlined jit_find_cache_entry_in_page (Code is repr(C), key u32 at 0x2000)
 - e3: + JIT_BAIL: missed fast path leaves the module, interpreter runs (jit_bailed flag)
   first try hung: bail at an entry block re-entered the module forever -> jit_bailed flag
-- running: ab e1/e12/e3 spring (jm/out/ab-e123-spring.txt)
+- ab e1/e12/e3 spring, 4 rounds each (main / process ms): e1 74740/106295, e12 73335/105645,
+  e3 64730/84665 (base was 79110/110330)
+- perf e3: JIT samples -23 %, spills 12.6 % -> 5 % of JIT; TLB check still ~30 % of JIT
+  (13 instr per access), main_loop 14 % (misses: state_table 22 %, Code header 9 %, MODULE_USE 6 %)
+- e4: bails do not add hotness/entry points (RUN_INTERPRETED_DIFFERENT_STATE miscount fixed,
+  JIT_BAIL counter): 739K bails in spring, 158 recompiles (base 139)
+- running: ab base/e3/e4 spring + base/e4 nginx goapp cpu glibc (jm/out/ab-e4-*.txt)
 
 ## Next
-- measure all workloads, profiler counters for e3 (bails, recompiles)
-- then main_loop misses
+- tests (all-debug, nasmtests, nasmtests-force-jit, rust-test, expect-tests update), merge, dist
+- maybe: MODULE_USE counter into Code header line; jump cache for main_loop
