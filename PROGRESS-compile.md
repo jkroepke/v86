@@ -46,6 +46,21 @@ Statnames for this branch: /home/claude/bench/compile/statnames.json.
 - counters RECOMPILE_BLOCK_BYTES / RECOMPILE_DELTA_BLOCK_BYTES: bytes a
   module for only the new entry points would need (stops at old entries).
 
+- TIERING (2 reps each, main / process s): default 110.5/313.6, 111.3/306.4;
+  --liftoff-only 114.5/118.0, 112.5/116.0; --no-liftoff 285.6/289.7,
+  274.6/278.5; --no-wasm-dynamic-tiering 109.9/297.7, 97.8/283.9;
+  budget 10x 104.3/278.5, 98.7/277.9; budget 100x 104.7/264.0, 98.3/259.0.
+  => TF of JIT modules costs ~190 s background CPU and buys 0-3 % main thread.
+- JITCFG (2 reps): default 96.3/269.7, 111.0/308.3; 1=1 99.7/210.4,
+  96.6/207.5; 1=2 97.7/228.2, 98.0/228.0; 4=600000 99.8/246.3, 94.8/239.7.
+- spring profiler stats p3 (3 pages): 1248 modules 222 MB; cold block bytes
+  54.6 %; recompiles with a live old module 84 MB of which 48.6 MB delta.
+- p3 with 1=1: 2322 modules 172.6 MB; interpreted steps 916M vs 1028M;
+  module entries 515M vs 399M; table full once (900 slots) -> clear all ->
+  1232 compiles after invalidation (83 MB). => try a bigger table / eviction.
+- running: compile/ab-spring1.out (base vs 1=1 vs 1=1 + table 3000),
+  compile/small-*.out (nginx/cpu/goapp default vs 1=1)
+
 ## Next
 - tiering flags on spring (compile/tier.sh -> compile/tier.out)
 - spring STATS run (compile/stats-spring.txt)
