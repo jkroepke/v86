@@ -75,6 +75,94 @@ const KNOWN_ENTRY_POINTS_SIZE: usize = 0x2000;
 // the wasm file). 0 is no entry point: the last bytes of a page are never recorded.
 static mut KNOWN_ENTRY_POINTS: [u32; KNOWN_ENTRY_POINTS_SIZE] = [0; KNOWN_ENTRY_POINTS_SIZE];
 
+// Which conditional jumps the interpreter took, per page with entry points: one bit per byte
+// of the page, set at the address where execution went on after a conditional jump (the
+// target or the next instruction). The analysis follows only these edges, so blocks that
+// never ran before the page got hot are not compiled; the module leaves to the interpreter
+// there instead. A page without a slot (evicted) is compiled whole, like before.
+// Slot 0 is a scratch slot: the interpreter writes there when its page has no slot.
+const MARK_SLOTS: usize = 4096;
+const MARK_SLOT_BYTES: usize = 0x1000 / 8;
+static mut MARKS: [u8; MARK_SLOTS * MARK_SLOT_BYTES] = [0; MARK_SLOTS * MARK_SLOT_BYTES];
+static mut MARK_SLOT_OF_PAGE: [u16; 0x100000] = [0; 0x100000];
+static mut MARK_SLOT_PAGE: [u32; MARK_SLOTS] = [0; MARK_SLOTS];
+static mut MARK_SLOT_NEXT: usize = 1;
+static mut MARK_SLOTS_FREE: Vec<u16> = Vec::new();
+// The marks of the block that the interpreter runs (set by jit_run_interpreted)
+pub static mut CUR_MARKS: *mut u8 = std::ptr::null_mut();
+pub static mut CUR_MARKS_VIRT_PAGE: i32 = 0;
+// set_jit_config(7, 0) turns the marks off (compile all blocks, like before)
+static mut JIT_COLD_BLOCKS: bool = true;
+
+#[allow(static_mut_refs)]
+fn marks_alloc(page: Page) {
+    unsafe {
+        let p = page.to_u32() as usize;
+        if MARK_SLOT_OF_PAGE[p] != 0 {
+            return;
+        }
+        let slot = match MARK_SLOTS_FREE.pop() {
+            Some(s) => s as usize,
+            None => {
+                let s = MARK_SLOT_NEXT;
+                MARK_SLOT_NEXT = if s + 1 == MARK_SLOTS { 1 } else { s + 1 };
+                let old = MARK_SLOT_PAGE[s] as usize;
+                if MARK_SLOT_OF_PAGE[old] as usize == s {
+                    MARK_SLOT_OF_PAGE[old] = 0;
+                    profiler::stat_increment(stat::MARKS_EVICTED);
+                }
+                s
+            },
+        };
+        MARKS[slot * MARK_SLOT_BYTES..(slot + 1) * MARK_SLOT_BYTES].fill(0);
+        MARK_SLOT_PAGE[slot] = p as u32;
+        MARK_SLOT_OF_PAGE[p] = slot as u16;
+    }
+}
+
+#[allow(static_mut_refs)]
+fn marks_free(page: Page) {
+    unsafe {
+        let p = page.to_u32() as usize;
+        let slot = MARK_SLOT_OF_PAGE[p];
+        if slot != 0 {
+            MARK_SLOT_OF_PAGE[p] = 0;
+            MARK_SLOTS_FREE.push(slot);
+        }
+    }
+}
+
+#[inline(always)]
+pub unsafe fn marks_set_current(virt_eip: i32, phys_addr: u32) {
+    let slot = MARK_SLOT_OF_PAGE[(phys_addr >> 12) as usize] as usize;
+    CUR_MARKS = std::ptr::addr_of_mut!(MARKS).cast::<u8>().add(slot * MARK_SLOT_BYTES);
+    CUR_MARKS_VIRT_PAGE = virt_eip & !0xFFF;
+}
+
+// Called by the interpreter after a conditional jump
+#[inline(always)]
+pub unsafe fn mark_conditional_jump(eip: i32) {
+    if ((eip ^ CUR_MARKS_VIRT_PAGE) as u32) < 0x1000 {
+        let m = CUR_MARKS.add((eip as usize & 0xFFF) >> 3);
+        *m |= 1 << (eip & 7);
+    }
+}
+
+// None: the page has no marks, every block counts as reached
+fn page_marks(page: Page) -> Option<&'static [u8]> {
+    unsafe {
+        if !JIT_COLD_BLOCKS {
+            return None;
+        }
+        let slot = MARK_SLOT_OF_PAGE[page.to_u32() as usize] as usize;
+        if slot == 0 {
+            return None;
+        }
+        #[allow(static_mut_refs)]
+        Some(&MARKS[slot * MARK_SLOT_BYTES..(slot + 1) * MARK_SLOT_BYTES])
+    }
+}
+
 #[inline(always)]
 fn known_entry_point_index(phys_address: u32) -> usize {
     (phys_address ^ phys_address >> 13) as usize & (KNOWN_ENTRY_POINTS_SIZE - 1)
@@ -541,6 +629,23 @@ fn jit_find_basic_blocks(
         Some(phys_target)
     }
 
+    // Did the interpreter go on at this address after a conditional jump, or start a block
+    // there? True for every address of a page without marks.
+    fn reached(ctx: &JitState, phys_addr: u32) -> bool {
+        let page = Page::page_of(phys_addr);
+        match page_marks(page) {
+            None => true,
+            Some(marks) => {
+                let off = phys_addr & 0xFFF;
+                marks[(off >> 3) as usize] & 1 << (off & 7) != 0
+                    || ctx
+                        .entry_points
+                        .get(&page)
+                        .map_or(false, |e| e.contains(&(off as u16)))
+            },
+        }
+    }
+
     let mut to_visit_stack: Vec<i32> = Vec::new();
     let mut marked_as_entry: HashSet<i32> = HashSet::default();
     let mut basic_blocks: BTreeMap<u32, BasicBlock> = BTreeMap::new();
@@ -671,7 +776,12 @@ fn jit_find_basic_blocks(
                     };
 
                     dbg_assert!(has_next_instruction);
-                    to_visit_stack.push(current_virt_addr);
+                    // Edges that the interpreter never took are left out: the target stays
+                    // in the block type, but the clean-up below drops it unless the block
+                    // was reached by another way
+                    if reached(ctx, current_address) {
+                        to_visit_stack.push(current_virt_addr);
+                    }
 
                     let next_block_addr = if is_near_end_of_page(current_address) {
                         None
@@ -680,9 +790,15 @@ fn jit_find_basic_blocks(
                         Some(current_address)
                     };
 
-                    current_block.ty = BasicBlockType::ConditionalJump {
-                        next_block_addr,
-                        next_block_branch_taken_addr: follow_jump(
+                    let same_page_target = if (jump_target ^ current_virt_addr) as u32 & !0xFFF == 0 {
+                        Some(current_address & !0xFFF | jump_target as u32 & 0xFFF)
+                    }
+                    else {
+                        None
+                    };
+                    let next_block_branch_taken_addr = match same_page_target {
+                        Some(phys_target) if !reached(ctx, phys_target) => Some(phys_target),
+                        _ => follow_jump(
                             jump_target,
                             ctx,
                             &mut pages,
@@ -691,6 +807,11 @@ fn jit_find_basic_blocks(
                             &mut marked_as_entry,
                             &mut to_visit_stack,
                         ),
+                    };
+
+                    current_block.ty = BasicBlockType::ConditionalJump {
+                        next_block_addr,
+                        next_block_branch_taken_addr,
                         condition,
                         jump_offset: offset,
                         jump_offset_is_32: is_32,
@@ -820,9 +941,11 @@ fn jit_find_basic_blocks(
             } => {
                 if next_block_addr.map_or(false, |a| !known_addresses.contains(&a)) {
                     *next_block_addr = None;
+                    profiler::stat_increment(stat::COMPILE_COLD_EDGE);
                 }
                 if next_block_branch_taken_addr.map_or(false, |a| !known_addresses.contains(&a)) {
                     *next_block_branch_taken_addr = None;
+                    profiler::stat_increment(stat::COMPILE_COLD_EDGE);
                 }
             },
             BasicBlockType::Exit | BasicBlockType::AbsoluteEip => {},
@@ -912,6 +1035,9 @@ fn jit_analyze_and_generate(
     //dbg_assert!(entry_points.union(&existing_entry_points).count() == entry_points.len());
 
     profiler::stat_increment(stat::COMPILE);
+    if page_marks(page).is_none() {
+        profiler::stat_increment(stat::COMPILE_WITHOUT_MARKS);
+    }
 
     let cpu = CpuContext {
         eip: 0,
@@ -2304,6 +2430,7 @@ pub fn jit_increase_hotness_and_maybe_compile(
         let mut ctx = get_jit_state();
         let entry_points = ctx.entry_points.entry(page).or_insert_with(|| {
             cpu::tlb_set_has_code(page, true);
+            marks_alloc(page);
             profiler::stat_increment(stat::RUN_INTERPRETED_NEW_PAGE);
             HashSet::default()
         });
@@ -2453,6 +2580,7 @@ fn jit_dirty_page_ctx(ctx: &mut JitState, page: Page) {
     match ctx.entry_points.remove(&page) {
         None => {},
         Some(entry_points) => {
+            marks_free(page);
             unsafe {
                 PAGE_HOTNESS[page.to_u32() as usize] = 0;
                 for addr_low in entry_points {
@@ -2710,6 +2838,7 @@ pub unsafe fn set_jit_config(index: u32, value: u32) {
         3 => MAX_EXTRA_BASIC_BLOCKS = value,
         4 => JIT_THRESHOLD = value,
         5 => codegen::JIT_SIMD = value != 0,
+        7 => JIT_COLD_BLOCKS = value != 0,
         _ => dbg_assert!(false),
     }
 }
@@ -2723,6 +2852,7 @@ pub unsafe fn get_jit_config(index: u32) -> u32 {
         3 => MAX_EXTRA_BASIC_BLOCKS as u32,
         4 => JIT_THRESHOLD,
         5 => codegen::JIT_SIMD as u32,
+        7 => JIT_COLD_BLOCKS as u32,
         _ => 0,
     }
 }

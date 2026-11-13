@@ -161,6 +161,9 @@ pub enum stat {
     MODULE_BLOCKS_ENTRY_COLD,
     RECOMPILE_BLOCK_BYTES,
     RECOMPILE_DELTA_BLOCK_BYTES,
+    MARKS_EVICTED,
+    COMPILE_COLD_EDGE,
+    COMPILE_WITHOUT_MARKS,
 }
 
 #[allow(non_upper_case_globals)]

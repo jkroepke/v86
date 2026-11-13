@@ -3575,6 +3575,7 @@ unsafe fn jit_run_interpreted(phys_addr: u32) {
 
     interpreter_page = *last_virt_eip;
     dbg_assert!(interpreter_page == *instruction_pointer & !0xFFF);
+    jit::marks_set_current(*instruction_pointer, phys_addr);
     record_opstat_interpreted(phys_addr);
     let opcode = *memory::mem8.offset(phys_addr as isize) as u32;
     *instruction_pointer += 1;

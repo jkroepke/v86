@@ -100,11 +100,13 @@ pub unsafe fn jmpcc16(condition: bool, imm16: i32) {
     if condition {
         jmp_rel16(imm16);
     };
+    crate::jit::mark_conditional_jump(*instruction_pointer);
 }
 pub unsafe fn jmpcc32(condition: bool, imm32: i32) {
     if condition {
         *instruction_pointer += imm32
     };
+    crate::jit::mark_conditional_jump(*instruction_pointer);
 }
 pub unsafe fn loope16(imm8s: i32) { jmpcc16(0 != decr_ecx_asize(is_asize_32()) && getzf(), imm8s); }
 pub unsafe fn loopne16(imm8s: i32) {
