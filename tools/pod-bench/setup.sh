@@ -18,4 +18,16 @@ for img in nginx alpine; do
   docker export "$cid" > "data/$img.tar"
   docker rm "$cid" >/dev/null
 done
+# goapp: access-log-exporter (Go, no linux/386 image exists), built for 386
+if [ ! -f data/goapp.tar ] && command -v go >/dev/null; then
+  tmp=$(mktemp -d)
+  git clone -q --depth 1 https://github.com/jkroepke/access-log-exporter "$tmp/src"
+  mkdir -p "$tmp/root/etc" "$tmp/root/tmp" "$tmp/root/dev" "$tmp/root/proc" "$tmp/root/sys"
+  (cd "$tmp/src" && CGO_ENABLED=0 GOOS=linux GOARCH=386 go build -trimpath -ldflags "-s -w" \
+    -o "$tmp/root/access-log-exporter" ./cmd/access-log-exporter)
+  cp "$tmp/src/packaging/etc/config.yaml" "$tmp/root/config.yaml"
+  echo 'root:x:0:0:root:/:/bin/sh' > "$tmp/root/etc/passwd"
+  tar -C "$tmp/root" -cf data/goapp.tar .
+  rm -rf "$tmp"
+fi
 echo "ready: $(ls data)"

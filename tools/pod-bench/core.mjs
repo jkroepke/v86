@@ -87,6 +87,8 @@ const confs = () => ({
   spring: ["spring", O.spring],
   cpu: ["alpine", { args: ["/bin/sh", "-c", O.script || DEFAULT_SCRIPT], env: [PATH], cwd: "/" }],
   simd: ["micro", { args: ["/micro", globalThis.process?.env?.MICRO_N || "8000"], env: [PATH], cwd: "/" }],
+  // a static Go binary (jkroepke/access-log-exporter, GOARCH=386): Go runtime start, then /metrics
+  goapp: ["goapp", { args: ["/access-log-exporter", "--config", "/config.yaml", "--syslog.listen-address", "udp://0.0.0.0:8514"], env: [PATH], cwd: "/" }],
   glibc: ["nginx", { args: ["/bin/sh", "-c", O.script || GLIBC_SCRIPT], env: [PATH], cwd: "/" }],
 });
 
@@ -107,15 +109,17 @@ async function boot() {
   return { ms, instr, state };
 }
 
-function httpGet(e) {
+// httpGet returns the status line, or with body the whole answer.
+function httpGet(e, port = 80, path = "/", body = false) {
   return new Promise((resolve) => {
-    const c = e.network_adapter.connect(80);
+    const c = e.network_adapter.connect(port);
     let got = "";
-    c.on("connect", () => c.write(new TextEncoder().encode("GET / HTTP/1.0\r\nHost: x\r\n\r\n")));
-    c.on("data", (d) => { got += new TextDecoder().decode(d); if (got.includes("\r\n\r\n")) { resolve(got.split("\r\n")[0]); c.close(); } });
-    c.on("close", () => resolve(got ? got.split("\r\n")[0] : null));
-    c.on("shutdown", () => resolve(got ? got.split("\r\n")[0] : null));
-    setTimeout(() => resolve(null), 500);
+    c.on("connect", () => c.write(new TextEncoder().encode(`GET ${path} HTTP/1.0\r\nHost: x\r\n\r\n`)));
+    c.on("data", (d) => { got += new TextDecoder().decode(d); if (!body && got.includes("\r\n\r\n")) { resolve(got.split("\r\n")[0]); c.close(); } });
+    const fin = () => resolve(got ? (body ? got : got.split("\r\n")[0]) : null);
+    c.on("close", fin);
+    c.on("shutdown", fin);
+    setTimeout(() => (body ? fin() : resolve(null)), body ? 20000 : 500);
   });
 }
 
@@ -143,12 +147,23 @@ async function pod(state, wl) {
   await until("started", () => control.includes("started") || control.some((l) => l.startsWith("exit")));
   const r = { started: performance.now() - t0, restore: restoreMs };
   try {
-    if (wl === "nginx" || wl === "spring") {
+    if (wl === "nginx" || wl === "spring" || wl === "goapp") {
+      const port = wl === "goapp" ? 4040 : 80;
       for (;;) {
-        const s = await httpGet(e);
+        const s = await httpGet(e, port);
         if (s && s.startsWith("HTTP/")) break;
-        if (performance.now() - t0 > 600000) throw new Error("no http");
+        if (performance.now() - t0 > (O.httpTimeout || 1500000)) throw new Error("no http");
         await sleep(wl === "spring" ? 200 : 20);
+      }
+      if (wl === "goapp") {
+        // steady state: scrape /metrics back to back, like Prometheus
+        r.up = performance.now() - t0;
+        const n = O.scrapes ?? 20, ts = performance.now();
+        for (let k = 0; k < n; k++) {
+          const m = await httpGet(e, port, "/metrics", true);
+          if (!m || !m.includes("go_goroutines")) throw new Error("bad /metrics: " + String(m).slice(0, 200));
+        }
+        r.scrape = (performance.now() - ts) / n;
       }
     } else {
       await until("exit", () => control.some((l) => l.startsWith("exit")));
@@ -198,9 +213,9 @@ export async function run(o) {
     r.pcpu = (o.pcpu?.() ?? 0) - p0;
     await o.hook?.(i, "end");
     res.push(r);
-    log(`${o.workload} round ${i}: restore ${r.restore.toFixed(0)} ms, started ${r.started.toFixed(0)} ms, done ${r.done.toFixed(0)} ms, cpu ${r.cpu.toFixed(0)} ms${o.pcpu ? `, process cpu ${r.pcpu.toFixed(0)} ms` : ""}, ${r.minstr.toFixed(1)}M instr, ${(r.minstr / r.done * 1000).toFixed(1)}M instr/s${O.idleMs ? `, idle: cpu ${r.idleCpu.toFixed(1)} ms/s, ${(r.idleInstr / 1000).toFixed(0)}k instr/s` : ""}`);
+    log(`${o.workload} round ${i}: restore ${r.restore.toFixed(0)} ms, started ${r.started.toFixed(0)} ms, done ${r.done.toFixed(0)} ms, cpu ${r.cpu.toFixed(0)} ms${o.pcpu ? `, process cpu ${r.pcpu.toFixed(0)} ms` : ""}, ${r.minstr.toFixed(1)}M instr, ${(r.minstr / r.done * 1000).toFixed(1)}M instr/s${O.idleMs ? `, idle: cpu ${r.idleCpu.toFixed(1)} ms/s, ${(r.idleInstr / 1000).toFixed(0)}k instr/s` : ""}${r.up ? `, up ${r.up.toFixed(0)} ms, scrape ${r.scrape.toFixed(1)} ms` : ""}`);
   }
   const med = (a) => a.slice().sort((x, y) => x - y)[a.length >> 1];
-  if (res.length)   log(`MEDIAN ${o.workload}: done ${med(res.map((r) => r.done)).toFixed(0)} ms, cpu ${med(res.map((r) => r.cpu)).toFixed(0)} ms${o.pcpu ? `, process cpu ${med(res.map((r) => r.pcpu)).toFixed(0)} ms` : ""}, started ${med(res.map((r) => r.started)).toFixed(0)} ms, ${med(res.map((r) => r.minstr)).toFixed(1)}M instr, ${med(res.map((r) => r.minstr / r.done * 1000)).toFixed(1)} Mips`);
+  if (res.length)   log(`MEDIAN ${o.workload}: done ${med(res.map((r) => r.done)).toFixed(0)} ms, cpu ${med(res.map((r) => r.cpu)).toFixed(0)} ms${o.pcpu ? `, process cpu ${med(res.map((r) => r.pcpu)).toFixed(0)} ms` : ""}, started ${med(res.map((r) => r.started)).toFixed(0)} ms, ${med(res.map((r) => r.minstr)).toFixed(1)}M instr, ${med(res.map((r) => r.minstr / r.done * 1000)).toFixed(1)} Mips${res[0].up ? `, up ${med(res.map((r) => r.up)).toFixed(0)} ms, scrape ${med(res.map((r) => r.scrape)).toFixed(1)} ms` : ""}`);
   return res;
 }

@@ -16,6 +16,7 @@ image from a 9p root file system (like `web/src/vmworker.js` in tabernetes).
 | nginx  | `nginx` (Debian)      | HTTP answer on port 80       | program start, ~51M instructions, 82 % interpreted |
 | cpu    | `alpine`              | exit; sha256 sums must match | JIT code: shell loop, gzip, sha256 (~2.4G instr) |
 | glibc  | `nginx` (Debian)      | exit                         | grep/sort/sed/awk on text, glibc SSE2 string functions |
+| goapp  | access-log-exporter   | HTTP on 4040, then 20 scrapes of /metrics | a static Go binary (386): runtime start, GC, int 0x80 system calls |
 | spring | see below             | HTTP answer on port 80       | a JVM (C1 JIT code in the guest), ~100 s, jumps between pages |
 
 `spring` needs `data/spring.tar` (flat `docker export` of a linux/386 image
@@ -31,6 +32,7 @@ main thread, from /proc/.../schedstat; less noisy when other processes run) and 
 instructions (32-bit counter: wraps for spring). Run-to-run noise is about
 10 %: compare medians of several rounds, or use `ab.sh`.
 
+- `SCRAPES=n`: scrapes of /metrics for goapp (default 20); `HTTP_TIMEOUT=ms`: give up waiting for HTTP
 - `V86=<dir>`: directory with `v86.wasm` and `libv86.mjs` (default `build/`)
 - `JITCFG="k=v,..."`: `cpu.set_jit_config(k, v)` (0 JIT off, 1 pages per module,
   2 loop safety, 3 extra basic blocks, 4 JIT threshold, 5 SIMD off with 0, 7 cold blocks off with 0)
