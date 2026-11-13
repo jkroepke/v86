@@ -1473,6 +1473,68 @@ VirtQueueBufferChain.prototype.get_next_blob = function(dest_buffer)
 };
 
 /**
+ * Views of the guest memory of the next length writable bytes after skip
+ * bytes, without moving the write position, so that a device can write
+ * into them directly (see skip_written). The JIT cache of the memory is
+ * invalidated. Returns null if the chain has fewer writable bytes.
+ * @param {number} skip
+ * @param {number} length
+ * @return {Array<!Uint8Array>}
+ */
+VirtQueueBufferChain.prototype.get_write_views = function(skip, length)
+{
+    const views = [];
+    let idx = this.write_buffer_idx;
+    let offset = this.write_buffer_offset + skip;
+    while(length)
+    {
+        if(idx === this.write_buffers.length)
+        {
+            return null;
+        }
+        const buf = this.write_buffers[idx];
+        if(offset >= buf.len)
+        {
+            offset -= buf.len;
+            idx++;
+            continue;
+        }
+        const n = Math.min(buf.len - offset, length);
+        views.push(this.cpu.get_write_view(buf.addr_low + offset, n));
+        length -= n;
+        offset += n;
+    }
+    return views;
+};
+
+/**
+ * Moves the write position like set_next_blob, for bytes that were written
+ * through get_write_views.
+ * @param {number} length
+ */
+VirtQueueBufferChain.prototype.skip_written = function(length)
+{
+    let remaining = length;
+    while(remaining && this.write_buffer_idx < this.write_buffers.length)
+    {
+        const buf = this.write_buffers[this.write_buffer_idx];
+        const n = buf.len - this.write_buffer_offset;
+        if(n > remaining)
+        {
+            this.write_buffer_offset += remaining;
+            remaining = 0;
+        }
+        else
+        {
+            this.write_buffer_idx++;
+            this.write_buffer_offset = 0;
+            remaining -= n;
+        }
+    }
+    this.length_written += length - remaining;
+};
+
+/**
  * Appends contents of src_buffer into the memory represented by the buffer chain.
  * @param {Uint8Array} src_buffer
  * @return {number} Number of bytes successfully written.

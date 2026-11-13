@@ -318,6 +318,25 @@ CPU.prototype.write_blob = function(blob, offset)
     }
 };
 
+/**
+ * A view of guest memory that the caller writes right away (devices that
+ * copy data straight into guest buffers).
+ * @param {number} offset
+ * @param {number} length
+ * @return {!Uint8Array}
+ */
+CPU.prototype.get_write_view = function(offset, length)
+{
+    if(offset + length > FRESH_MEMORY_DIRTY_LIMIT)
+    {
+        this.memory_fresh = false;
+    }
+    dbg_assert(!this.in_mapped_range(offset));
+    dbg_assert(!this.in_mapped_range(offset + length - 1));
+    this.jit_dirty_cache(offset, offset + length);
+    return this.mem8.subarray(offset, offset + length);
+};
+
 CPU.prototype.read_blob = function(offset, length)
 {
     if(length)
