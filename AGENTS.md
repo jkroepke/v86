@@ -47,6 +47,16 @@ nasmtests compare every instruction with the host CPU through gdb (apt:
 interpreter and with the JIT forced, before anything goes to `master`. New
 instructions need new test cases (tests/nasm, gen/x86_table.js).
 
+## Release to tabernetes
+
+tabernetes pins the branch `dist` of this fork (`"v86":
+"github:jkroepke/v86#<commit>"` in `web/package.json`). `tools/dist.sh
+--push` builds the release files of a clean `master` and adds one commit to
+`dist` with only the npm package files. The version is unique per commit
+(`0.5.<count>-fork.<sha>`) because tabernetes keys its saved VM states by it:
+a state saved by another build (other CPUID, other device state) is not
+restored. After a push, bump the commit in tabernetes.
+
 ## Measure
 
 Use `tools/pod-bench` (see its README): nginx (program start, mostly the
