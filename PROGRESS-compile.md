@@ -88,6 +88,8 @@ Statnames for this branch: /home/claude/bench/compile/statnames.json.
   Expect tests: master's snapshots fail with the only wabt we can fetch
   (1.0.39) for unrelated formatting; constants verified with codex run.js.
 
+- MERGED to master cbac223 (3 commits on cab24b0); dist bdf93ce (0.5.75-fork.cbac223022de).
+
 ## Next
 - tiering flags on spring (compile/tier.sh -> compile/tier.out)
 - spring STATS run (compile/stats-spring.txt)
