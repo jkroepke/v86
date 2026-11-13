@@ -25,6 +25,14 @@
   medians m2 ~7850, c3 ~7315, c4 ~7345 ms.
 - callgrind of nginx does not finish under this load (no http in 1500 s); icg.sh round parsing broken.
 
+- spring perf (all threads, -F 1000, m2 vs c4 7=0 run at the same time): main thread 158.1k vs
+  160.5k samples; V8 compile threads 240.6k vs 251.8k (+4.6 %, the code of the direct chain exits).
+  Over all threads: TurboFan compile 56.5 % / 57.5 %, JIT modules 23.0 % / 25.5 %, v86 Rust
+  (main loop etc.) 10.4 % / 6.9 %. => Chaining removes the main loop work, but the lookup and the
+  tail call in the modules cost the same. Spring main thread: no gain. More than half of all CPU of
+  spring is TurboFan compiling JIT modules (background threads).
+- spring cpu s, run d (alternated): m2 136.5 149.0 120.2; c4 159.3 152.1.
+
 ## Current step
 - spring A/B running (chain2/run.sh tag b, results in chain2/results.txt): m2 vs c4 7=0 vs c3 7=0, 2x.
 - c4 state: all-debug, rust-test, nasmtests 15600/15600, nasmtests-force-jit 15600/15600 pass.
