@@ -17,5 +17,13 @@ base = origin/master cbac223.
 - A/B release spring (cold/ab-spring.out): rep1-2 process 165/161 -> 128/126 s, main 90.8/89.9 ->
   83.8/81.7, peak RSS 756/786 -> 641/672 MiB.
 
+- A/B release, 3 reps x 3 rounds (spring 3 x 1), medians, process / main / wall / peak RSS:
+  spring 165.0/90.8/104.4 s 786 MiB -> 128.0/83.8/92.6 s 672 MiB; goapp 12.06/2.73/10.23 ->
+  6.78/2.21/5.86; cpu 11.25/5.77/8.28 -> 8.44/5.57/6.91; nginx 3.32/0.83/1.49 -> 2.36/0.78/1.14
+  (cold/ab-*.out, sum.py)
+- jit_force_generate_unsafe compiles all blocks (tests).
+- threshold (c1): 100k worse everywhere; 400k: goapp process 6.81 -> 4.74, nginx 2.46 -> 1.51,
+  cpu same, main same. Running: spring 400k, goapp/nginx 800k (cold/thr*-*.out).
+
 ## Next
 - profiler stats (cold edges, evictions, bytes), goapp, spring, A/B

@@ -983,6 +983,9 @@ pub fn jit_force_generate_unsafe(virt_addr: i32) {
         !is_near_end_of_page(virt_addr as u32),
         "cannot force compile near end of page"
     );
+    // The code did not run in the interpreter: compile all blocks (the tests rely on it)
+    let cold_blocks = unsafe { JIT_COLD_BLOCKS };
+    unsafe { JIT_COLD_BLOCKS = false };
     jit_increase_hotness_and_maybe_compile(
         virt_addr,
         cpu::translate_address_read(virt_addr).unwrap(),
@@ -990,6 +993,7 @@ pub fn jit_force_generate_unsafe(virt_addr: i32) {
         cpu::get_state_flags(),
         unsafe { JIT_THRESHOLD },
     );
+    unsafe { JIT_COLD_BLOCKS = cold_blocks };
     dbg_assert!(get_jit_state().compiling.is_some());
 }
 
