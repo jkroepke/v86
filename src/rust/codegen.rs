@@ -1110,7 +1110,12 @@ pub fn gen_safe_read_write(
     ctx.builder.const_i32(TLB_VALID as i32);
     ctx.builder.eq_i32();
 
-    let can_use_fast_path_local = ctx.builder.tee_new_local();
+    let can_use_fast_path_local = if unsafe { JIT_BAIL } {
+        None
+    }
+    else {
+        Some(ctx.builder.tee_new_local())
+    };
 
     ctx.builder.br_if(cont);
 
@@ -1208,7 +1213,7 @@ pub fn gen_safe_read_write(
     };
 
     if !unsafe { JIT_BAIL } {
-        ctx.builder.get_local(&can_use_fast_path_local);
+        ctx.builder.get_local(can_use_fast_path_local.as_ref().unwrap());
 
         ctx.builder.eqz_i32();
         ctx.builder.if_void();
@@ -1302,7 +1307,9 @@ pub fn gen_safe_read_write(
         GenSafeReadWriteValue::I32(l) => ctx.builder.free_local(l),
         GenSafeReadWriteValue::I64(l) => ctx.builder.free_local_i64(l),
     }
-    ctx.builder.free_local(can_use_fast_path_local);
+    if let Some(l) = can_use_fast_path_local {
+        ctx.builder.free_local(l);
+    }
     ctx.builder.free_local(phys_addr_local);
 }
 
