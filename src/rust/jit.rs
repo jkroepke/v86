@@ -1,5 +1,5 @@
-use std::collections::{BTreeMap, VecDeque};
 use crate::hash::{HashMap, HashSet};
+use std::collections::{BTreeMap, VecDeque};
 use std::iter::FromIterator;
 use std::mem::{self, MaybeUninit};
 use std::ops::{Deref, DerefMut};
@@ -346,6 +346,8 @@ pub struct JitContext<'a> {
     pub exit_label: Label,
     pub current_instruction: Instruction,
     pub previous_instruction: Instruction,
+    pub gs_base: Option<WasmLocal>,
+    pub gs_is_null: Option<WasmLocal>,
     pub instruction_counter: WasmLocal,
     pub wasm_table_index: WasmTableIndex,
 }
@@ -1255,6 +1257,8 @@ fn jit_generate_module(
         exit_label,
         current_instruction: Instruction::Other,
         previous_instruction: Instruction::Other,
+        gs_base: None,
+        gs_is_null: None,
         instruction_counter,
         wasm_table_index,
     };
@@ -2148,6 +2152,15 @@ fn jit_generate_basic_block(ctx: &mut JitContext, block: &BasicBlock) {
         }
 
         ctx.previous_instruction = mem::replace(&mut ctx.current_instruction, Instruction::Other);
+    }
+
+    // Segment reloads end a basic block. Reload GS on every subsequent block,
+    // including blocks reached by a different entry into the same module.
+    if let Some(local) = ctx.gs_base.take() {
+        ctx.builder.free_local(local);
+    }
+    if let Some(local) = ctx.gs_is_null.take() {
+        ctx.builder.free_local(local);
     }
 }
 

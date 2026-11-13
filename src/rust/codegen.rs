@@ -1706,6 +1706,62 @@ pub enum ConditionNegate {
     False,
 }
 
+// Flag-preserving instructions may overwrite any of the register operands.
+// Keep the producer and its size, but use the saved lazy-flag operands afterwards.
+pub fn gen_preserve_flags(ctx: &mut JitContext) {
+    let source = |operand: &InstructionOperand| match operand {
+        InstructionOperand::Immediate(i) => InstructionOperand::Immediate(*i),
+        _ => InstructionOperand::Other,
+    };
+    ctx.current_instruction = match &ctx.previous_instruction {
+        Instruction::Cmp {
+            opsize,
+            source: operand,
+            ..
+        } => Instruction::Cmp {
+            dest: InstructionOperandDest::Other,
+            source: source(operand),
+            opsize: *opsize,
+        },
+        Instruction::Sub {
+            opsize,
+            source: operand,
+            is_dec,
+            ..
+        } => Instruction::Sub {
+            dest: InstructionOperandDest::Other,
+            source: source(operand),
+            opsize: *opsize,
+            is_dec: *is_dec,
+        },
+        Instruction::Add {
+            opsize,
+            source: operand,
+            is_inc,
+            ..
+        } => Instruction::Add {
+            dest: InstructionOperandDest::Other,
+            source: source(operand),
+            opsize: *opsize,
+            is_inc: *is_inc,
+        },
+        Instruction::AdcSbb { opsize, .. } => Instruction::AdcSbb {
+            dest: InstructionOperandDest::Other,
+            source: InstructionOperand::Other,
+            opsize: *opsize,
+        },
+        Instruction::NonZeroShift { opsize, .. } => Instruction::NonZeroShift {
+            dest: InstructionOperandDest::Other,
+            opsize: *opsize,
+        },
+        Instruction::Bitwise { opsize, .. } => Instruction::Bitwise {
+            dest: InstructionOperandDest::Other,
+            opsize: *opsize,
+        },
+        Instruction::Other => Instruction::Other,
+    };
+}
+
 pub fn gen_getzf(ctx: &mut JitContext, negate: ConditionNegate) {
     match &ctx.previous_instruction {
         Instruction::Cmp {
@@ -2198,6 +2254,60 @@ pub fn gen_test_be(ctx: &mut JitContext, negate: ConditionNegate) {
     }
 }
 
+fn gen_test_signed_add_immediate(
+    ctx: &mut JitContext,
+    opsize: i32,
+    source: i32,
+    le: bool,
+    negate: ConditionNegate,
+) {
+    gen_profiler_stat_increment(ctx.builder, profiler::stat::CONDITION_OPTIMISED);
+    let shift = 31 - opsize;
+    let source = source << shift >> shift;
+    // SF xor OF is the sign of the mathematical (untruncated) sum.
+    // Adding the most negative value always produces a negative sum.
+    if source == -(1i64 << opsize) as i32 {
+        ctx.builder
+            .const_i32(if negate == ConditionNegate::True { 0 } else { 1 });
+        return;
+    }
+    gen_get_last_op1(ctx.builder, &ctx.previous_instruction);
+    if shift != 0 {
+        ctx.builder.const_i32(shift);
+        ctx.builder.shl_i32();
+        ctx.builder.const_i32(shift);
+        ctx.builder.shr_s_i32();
+    }
+    ctx.builder.const_i32(source.wrapping_neg());
+    match (le, negate) {
+        (false, ConditionNegate::False) => ctx.builder.lt_i32(),
+        (false, ConditionNegate::True) => ctx.builder.ge_i32(),
+        (true, ConditionNegate::False) => ctx.builder.le_i32(),
+        (true, ConditionNegate::True) => ctx.builder.gt_i32(),
+    }
+}
+
+fn gen_test_stored_of(ctx: &mut JitContext, opsize: i32, negate: ConditionNegate) {
+    gen_profiler_stat_increment(ctx.builder, profiler::stat::CONDITION_OPTIMISED);
+    gen_get_last_result(ctx.builder, &ctx.previous_instruction);
+    gen_get_flags(ctx.builder);
+    // Align the stored OF bit with the sign bit of the result.
+    if opsize >= 11 {
+        ctx.builder.const_i32(opsize - 11);
+        ctx.builder.shl_i32();
+    }
+    else {
+        ctx.builder.const_i32(11 - opsize);
+        ctx.builder.shr_u_i32();
+    }
+    ctx.builder.xor_i32();
+    ctx.builder.const_i32(1i32 << opsize);
+    ctx.builder.and_i32();
+    if negate == ConditionNegate::True {
+        ctx.builder.eqz_i32();
+    }
+}
+
 pub fn gen_test_l(ctx: &mut JitContext, negate: ConditionNegate) {
     match &ctx.previous_instruction {
         Instruction::Cmp {
@@ -2302,10 +2412,36 @@ pub fn gen_test_l(ctx: &mut JitContext, negate: ConditionNegate) {
             gen_profiler_stat_increment(ctx.builder, profiler::stat::CONDITION_OPTIMISED);
             gen_getsf(ctx, negate);
         },
-        &Instruction::Other
-        | Instruction::Add { .. }
-        | Instruction::NonZeroShift { .. }
-        | Instruction::AdcSbb { .. } => {
+        Instruction::Add {
+            is_inc: true,
+            opsize,
+            ..
+        } => {
+            let opsize = *opsize;
+            gen_profiler_stat_increment(ctx.builder, profiler::stat::CONDITION_OPTIMISED);
+            // For INC, SF xor OF is the sign of both input and result.
+            gen_get_last_op1(ctx.builder, &ctx.previous_instruction);
+            gen_get_last_result(ctx.builder, &ctx.previous_instruction);
+            ctx.builder.and_i32();
+            ctx.builder.const_i32(1i32 << opsize);
+            ctx.builder.and_i32();
+            if negate == ConditionNegate::True {
+                ctx.builder.eqz_i32();
+            }
+        },
+        Instruction::Add {
+            source: InstructionOperand::Immediate(i),
+            opsize,
+            ..
+        } => {
+            let (opsize, i) = (*opsize, *i);
+            gen_test_signed_add_immediate(ctx, opsize, i, false, negate);
+        },
+        Instruction::NonZeroShift { opsize, .. } | Instruction::AdcSbb { opsize, .. } => {
+            let opsize = *opsize;
+            gen_test_stored_of(ctx, opsize, negate);
+        },
+        &Instruction::Other | Instruction::Add { is_inc: false, .. } => {
             gen_profiler_stat_increment(ctx.builder, profiler::stat::CONDITION_UNOPTIMISED);
             if let Instruction::Add { .. } = ctx.previous_instruction {
                 gen_profiler_stat_increment(
@@ -2435,10 +2571,38 @@ pub fn gen_test_le(ctx: &mut JitContext, negate: ConditionNegate) {
                 ctx.builder.eqz_i32();
             }
         },
-        Instruction::Other
-        | Instruction::Add { .. }
-        | Instruction::NonZeroShift { .. }
-        | Instruction::AdcSbb { .. } => {
+        Instruction::Add {
+            is_inc: true,
+            opsize,
+            ..
+        } => {
+            let opsize = *opsize;
+            gen_profiler_stat_increment(ctx.builder, profiler::stat::CONDITION_OPTIMISED);
+            // INC's mathematical result is <= 0 exactly when its input is negative.
+            gen_get_last_op1(ctx.builder, &ctx.previous_instruction);
+            ctx.builder.const_i32(1i32 << opsize);
+            ctx.builder.and_i32();
+            if negate == ConditionNegate::True {
+                ctx.builder.eqz_i32();
+            }
+        },
+        Instruction::Add {
+            source: InstructionOperand::Immediate(i),
+            opsize,
+            ..
+        } => {
+            let (opsize, i) = (*opsize, *i);
+            gen_test_signed_add_immediate(ctx, opsize, i, true, negate);
+        },
+        Instruction::NonZeroShift { .. } | Instruction::AdcSbb { .. } => {
+            gen_test_l(ctx, ConditionNegate::False);
+            gen_getzf(ctx, ConditionNegate::False);
+            ctx.builder.or_i32();
+            if negate == ConditionNegate::True {
+                ctx.builder.eqz_i32();
+            }
+        },
+        Instruction::Other | Instruction::Add { is_inc: false, .. } => {
             gen_profiler_stat_increment(ctx.builder, profiler::stat::CONDITION_UNOPTIMISED);
             if let Instruction::Add { .. } = ctx.previous_instruction {
                 gen_profiler_stat_increment(
@@ -2591,6 +2755,22 @@ pub fn gen_condition_fn_negated(ctx: &mut JitContext, condition: u8) {
 
 pub fn gen_condition_fn(ctx: &mut JitContext, condition: u8) {
     if condition & 0xF0 == 0x00 || condition & 0xF0 == 0x70 || condition & 0xF0 == 0x80 {
+        if cfg!(feature = "profiler") {
+            let previous = match ctx.previous_instruction {
+                Instruction::Other => 0,
+                Instruction::Cmp { .. } => 1,
+                Instruction::Sub { is_dec: false, .. } => 2,
+                Instruction::Sub { is_dec: true, .. } => 3,
+                Instruction::Add { is_inc: false, .. } => 4,
+                Instruction::Add { is_inc: true, .. } => 5,
+                Instruction::AdcSbb { .. } => 6,
+                Instruction::NonZeroShift { .. } => 7,
+                Instruction::Bitwise { .. } => 8,
+            };
+            let index = previous * 16 + (condition & 0xF) as usize;
+            let addr = unsafe { &raw mut profiler::condition_array[index] } as u32;
+            ctx.builder.increment_fixed_i64(addr, 1);
+        }
         match condition & 0xF {
             0x0 => {
                 gen_getof(ctx);

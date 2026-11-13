@@ -226,6 +226,19 @@ function gen_instruction_body_after_fixed_g(encoding, size)
 
     const instruction_prefix = [];
 
+    // MOV, LEA, NOP, CMOVcc and SETcc preserve the arithmetic flags.
+    // Drop register aliases before the instruction can overwrite an operand.
+    if(encoding.opcode >= 0x88 && encoding.opcode <= 0x8B ||
+       encoding.opcode === 0x8D || encoding.opcode === 0x90 ||
+       encoding.opcode >= 0xA0 && encoding.opcode <= 0xA3 ||
+       encoding.opcode >= 0xB0 && encoding.opcode <= 0xBF ||
+       encoding.opcode === 0xC6 || encoding.opcode === 0xC7 ||
+       encoding.opcode >= 0x0F40 && encoding.opcode <= 0x0F4F ||
+       encoding.opcode >= 0x0F90 && encoding.opcode <= 0x0F9F)
+    {
+        instruction_prefix.push("codegen::gen_preserve_flags(ctx);");
+    }
+
     if(encoding.task_switch_test || encoding.sse)
     {
         instruction_prefix.push(
