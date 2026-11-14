@@ -242,6 +242,27 @@ Counters of `src/rust/gueststat.rs` (`GSTAT=` of `tools/pod-bench`), Linux
   of memory accesses (~48 bytes each, ~one per 120 bytes of module).
 - Measure process CPU, not only the main thread: `tools/pod-bench`
   reports the main thread; read `/proc/self/stat` for all threads.
+- Dead end (2026-11-14, branch `wip/jit-split`): one wasm function per
+  region of a page instead of one function per module. Regions are the
+  strongly connected groups of blocks in topological order; a group joins
+  the region of a predecessor while it stays under n bytes of guest code
+  (`set_jit_config(9, n)`), the block after a call stays with the call.
+  The exported function tail-calls the region of the entry; a jump to
+  another region tail-calls it with the state, the instruction counter
+  and the 8 registers as parameters. V8 compiles and tiers up each region
+  on its own, so TurboFan does less: background CPU of spring -30 %,
+  process CPU of a cold goapp start -11 % (n = 1024) to -13 % (n = 256).
+  But the code runs slower: main thread of spring +10 % (48.2 -> 52.8 s,
+  process 62.2 -> 62.7 s), goapp in the steady state +6 % per scrape, cpu
+  +2..7 %, a cold goapp start 0..+2 %; nginx compiles only ~11 modules and
+  does not change. Not the region changes (spring leaves a region 23M
+  times against 480M module entries), not the tier-up budget
+  (`--wasm-tiering-budget` 10x lower: still +8 %), not the extra call into
+  the region (a module of one region behind the dispatcher: cpu +2 %).
+  Earlier variants were worse: regions that return to a dispatcher loop,
+  registers in memory between regions (cpu +6..9 %). With a JIT threshold
+  of 400k, the main-thread gain of the lower threshold (goapp -7 %) is
+  gone with the split. Not kept.
 
 ## Memory accesses in JIT code (measured 2026-11-13)
 
