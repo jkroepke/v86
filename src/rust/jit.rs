@@ -475,9 +475,6 @@ pub struct JitContext<'a> {
     pub gs_is_null: Option<WasmLocal>,
     pub instruction_counter: WasmLocal,
     pub wasm_table_index: WasmTableIndex,
-    /// The function is a region of a split module: it returns -1 when it leaves the module, or
-    /// the next state (see jit_generate_module)
-    pub returns_i32: bool,
 }
 impl<'a> JitContext<'a> {
     pub fn reg(&self, i: u32) -> WasmLocal {
@@ -1417,20 +1414,27 @@ fn update_tlb_code_ctx(ctx: &JitState, virt_page: Page, phys_page: Page) {
     }
 }
 
-/// A region of a split module: the basic blocks of one wasm function, and for the jumps to blocks
-/// of other regions the value that the function returns (see jit_generate_module)
+/// A region of a split module: the basic blocks of one wasm function f(state, instruction
+/// counter). A jump to a block of another region sets eip and tail-calls that region; an indirect
+/// jump to another region tail-calls the dispatcher.
 pub struct Region {
-    leave: HashMap<u32, i32>,
+    // target address -> (state of the target, region of the target)
+    leave: HashMap<u32, (u16, u32)>,
     has_indirect_jump: bool,
+    dispatcher: u32,
 }
-
-// A region returns the index of the next block (bits 0-15) and, with REGION_EIP_SET, the low
-// bits of its address (bits 16-27): eip must be set to them if the dispatcher exits there
-const REGION_EIP_SET: i32 = 0x1000_0000;
 
 // set_jit_config(9, n): split a module into functions of at most n bytes of guest code (a
 // strongly connected group of blocks is never split); 0 turns it off
 static mut JIT_SPLIT: u32 = 0;
+// set_jit_config(11, 1): blocks that only entries reach join the last region (fewer functions)
+static mut JIT_SPLIT_MERGE: bool = false;
+// set_jit_config(12, 0): do not keep the block after a call in the region of the call
+static mut JIT_SPLIT_CALLS: bool = true;
+// set_jit_config(13, 1): the exported function calls the region instead of a tail call
+static mut JIT_SPLIT_ENTRY_CALL: bool = false;
+// set_jit_config(14, 1): experiment, a module of one region still gets the dispatchers
+static mut JIT_SPLIT_FORCE: bool = false;
 
 fn jit_generate_module(
     structure: Vec<WasmStructure>,
@@ -1491,7 +1495,22 @@ fn jit_generate_module(
 
     let max_region_bytes = unsafe { JIT_SPLIT };
     let regions = if max_region_bytes > 0 {
-        control_flow::regions(graph, max_region_bytes, &|addr| {
+        // a call in this page returns to the next block through the dispatcher: keep the
+        // block after a call in the region of the call
+        let mut graph = graph.clone();
+        if unsafe { JIT_SPLIT_CALLS } {
+            for b in basic_blocks.values() {
+                let op = memory::read8(b.last_instruction_addr);
+                let is_call = op == 0xE8
+                    || op == 0x9A
+                    || (op == 0xFF && (memory::read8(b.last_instruction_addr + 1) >> 3 & 7) == 2);
+                if is_call && basic_blocks.contains_key(&b.end_addr) {
+                    graph.get_mut(&b.addr).unwrap().insert(b.end_addr);
+                }
+            }
+        }
+        let graph = &graph;
+        control_flow::regions(graph, max_region_bytes, unsafe { JIT_SPLIT_MERGE }, &|addr| {
             let b = basic_blocks.get(&addr).unwrap();
             b.end_addr - b.addr
         })
@@ -1502,7 +1521,7 @@ fn jit_generate_module(
 
     let mut block_bytes = Vec::new();
 
-    if regions.len() <= 1 {
+    if regions.len() == 0 || (regions.len() == 1 && !unsafe { JIT_SPLIT_FORCE }) {
         block_bytes = jit_generate_function(
             structure,
             basic_blocks,
@@ -1547,8 +1566,8 @@ fn jit_generate_module(
                         entries.insert(to);
                     }
                     if from_in_region && !in_region.contains(&to) {
-                        let index = *index_for_addr.get(&to).unwrap() as i32;
-                        leave.insert(to, index | REGION_EIP_SET | ((to as i32 & 0xFFF) << 16));
+                        let index = *index_for_addr.get(&to).unwrap();
+                        leave.insert(to, (index, *region_of_block.get(&to).unwrap() as u32));
                     }
                 }
                 if from_in_region {
@@ -1573,6 +1592,7 @@ fn jit_generate_module(
             let region = Region {
                 leave,
                 has_indirect_jump,
+                dispatcher: regions.len() as u32,
             };
             block_bytes.extend(jit_generate_function(
                 structure,
@@ -1584,7 +1604,7 @@ fn jit_generate_module(
                 &index_for_addr,
                 Some(&region),
             ));
-            builder.finish_function(true);
+            builder.finish_function();
         }
         // the entries of the module must reach their region
         for &addr in &entry_blocks {
@@ -1593,8 +1613,12 @@ fn jit_generate_module(
                     == Some(*region_of_block.get(&addr).unwrap() as u32)
             );
         }
-        jit_generate_region_dispatcher(builder, &region_of_index, regions.len() as u32);
-        builder.finish_function(false);
+        // the dispatcher for indirect jumps between regions, then the exported function
+        builder.set_arg_count(10);
+        jit_generate_region_dispatcher(builder, &region_of_index, regions.len() as u32, true);
+        builder.finish_function();
+        jit_generate_region_dispatcher(builder, &region_of_index, regions.len() as u32, false);
+        builder.finish_function();
     }
 
     profiler::module_blocks(wasm_table_index.to_u16(), block_bytes);
@@ -1623,19 +1647,15 @@ fn jit_generate_module(
     return entries;
 }
 
-/// The exported function of a split module: calls the region of the current state until a region
-/// leaves the module (returns -1) or the loop safety ends it
+/// Tail-call the region of the state: f(state) of a split module (with an instruction counter of
+/// 0), or the dispatcher(state, instruction counter) for indirect jumps between regions
 fn jit_generate_region_dispatcher(
     builder: &mut WasmBuilder,
     region_of_index: &Vec<Option<u32>>,
     region_count: u32,
+    with_counter: bool,
 ) {
-    let state = builder.arg_local_initial_state.unsafe_clone();
-    builder.load_fixed_i32(global_pointers::instruction_counter as u32);
-    let start = builder.set_new_local();
-
-    let main_loop = builder.loop_void();
-    let next = builder.block_void();
+    let state = builder.arg_local(0);
     let default = builder.block_void();
     let labels: Vec<Label> = (0..region_count).map(|_| builder.block_void()).collect();
     let cases: Vec<Label> = region_of_index
@@ -1646,64 +1666,33 @@ fn jit_generate_region_dispatcher(
         })
         .collect();
     builder.get_local(&state);
-    builder.const_i32(0xFFFF);
-    builder.and_i32();
     builder.brtable(default, &mut cases.iter());
     for r in (0..region_count).rev() {
         builder.block_end();
         codegen::gen_profiler_stat_increment(builder, stat::REGION_CALL);
         builder.get_local(&state);
-        builder.const_i32(0xFFFF);
-        builder.and_i32();
-        builder.call_own_fn(r);
-        builder.set_local(&state);
-        builder.br(next);
+        if with_counter {
+            for i in 1..10 {
+                let arg = builder.arg_local(i);
+                builder.get_local(&arg);
+            }
+        }
+        else {
+            builder.const_i32(0);
+            for i in 0..8 {
+                builder.load_fixed_i32(global_pointers::get_reg32_offset(i));
+            }
+        }
+        if !with_counter && unsafe { JIT_SPLIT_ENTRY_CALL } {
+            builder.call_own_fn(r);
+            builder.return_();
+        }
+        else {
+            builder.return_call_own_fn(r);
+        }
     }
     builder.block_end(); // default
     builder.unreachable();
-    builder.block_end(); // next
-
-    builder.get_local(&state);
-    builder.const_i32(0);
-    builder.lt_i32();
-    builder.if_void();
-    builder.return_();
-    builder.block_end();
-
-    if unsafe { JIT_USE_LOOP_SAFETY } {
-        builder.load_fixed_i32(global_pointers::instruction_counter as u32);
-        builder.get_local(&start);
-        builder.sub_i32();
-        builder.const_i32(cpu::LOOP_COUNTER);
-        builder.geu_i32();
-        builder.if_void();
-        {
-            builder.get_local(&state);
-            builder.const_i32(REGION_EIP_SET);
-            builder.and_i32();
-            builder.if_void();
-            {
-                // eip = eip & ~0xFFF | state >> 16 & 0xFFF
-                builder.const_i32(global_pointers::instruction_pointer as i32);
-                codegen::gen_get_eip(builder);
-                builder.const_i32(!0xFFF);
-                builder.and_i32();
-                builder.get_local(&state);
-                builder.const_i32(16);
-                builder.shr_u_i32();
-                builder.const_i32(0xFFF);
-                builder.and_i32();
-                builder.or_i32();
-                builder.store_aligned_i32(0);
-            }
-            builder.block_end();
-            builder.return_();
-        }
-        builder.block_end();
-    }
-    builder.br(main_loop);
-    builder.block_end(); // main loop
-    builder.free_local(start);
 }
 
 fn jit_generate_function(
@@ -1716,23 +1705,47 @@ fn jit_generate_function(
     index_for_addr: &HashMap<u32, u16>,
     region: Option<&Region>,
 ) -> Vec<(u32, u32, bool)> {
+    if region.is_some() {
+        // a region gets the registers as parameters 2 to 9
+        builder.set_arg_count(10);
+    }
     let mut register_locals = (0..8)
         .map(|i| {
-            builder.load_fixed_i32(global_pointers::get_reg32_offset(i));
-            builder.set_new_local()
+            if region.is_some() {
+                builder.arg_local(2 + i as u8)
+            }
+            else {
+                builder.load_fixed_i32(global_pointers::get_reg32_offset(i));
+                builder.set_new_local()
+            }
         })
         .collect();
 
-    builder.const_i32(0);
-    let instruction_counter = builder.set_new_local();
+    let instruction_counter = if region.is_some() {
+        // the instruction counter goes from region to region
+        builder.arg_local(1)
+    }
+    else {
+        builder.const_i32(0);
+        builder.set_new_local()
+    };
 
     // always set before use (wasm locals start as 0)
     let bail_eip_low_bits_local = builder.alloc_local();
     let exit_label = builder.block_void();
     let bail_label = builder.block_void();
     let exit_with_fault_label = builder.block_void();
-    // a jump to a block of another region: return the value in the target block local
+    // an indirect jump to a block of another region: tail-call the dispatcher
     let leave_label = region.map(|_| builder.block_void());
+    // a direct jump to a block of another region: set eip, tail-call that region
+    let mut leave_targets: Vec<(u32, u16, u32, Label)> = Vec::new();
+    if let Some(region) = region {
+        let mut targets: Vec<(&u32, &(u16, u32))> = region.leave.iter().collect();
+        targets.sort();
+        for (&addr, &(index, r)) in targets {
+            leave_targets.push((addr, index, r, builder.block_void()));
+        }
+    }
     let main_loop_label = builder.loop_void();
     if unsafe { JIT_USE_LOOP_SAFETY } {
         builder.get_local(&instruction_counter);
@@ -1765,14 +1778,11 @@ fn jit_generate_function(
         gs_is_null: None,
         instruction_counter,
         wasm_table_index,
-        returns_i32: region.is_some(),
     };
 
-    let mut label_for_addr: HashMap<u32, (Label, Option<i32>)> = HashMap::default();
-    if let Some(region) = region {
-        for (&addr, &value) in region.leave.iter() {
-            label_for_addr.insert(addr, (leave_label.unwrap(), Some(value)));
-        }
+    let mut label_for_addr: HashMap<u32, (Label, Option<u16>)> = HashMap::default();
+    for &(addr, _, _, label) in &leave_targets {
+        label_for_addr.insert(addr, (label, None));
     }
     let mut first_dispatcher = true;
 
@@ -1781,12 +1791,12 @@ fn jit_generate_function(
         BlockEnd {
             label: Label,
             targets: Vec<u32>,
-            olds: HashMap<u32, (Label, Option<i32>)>,
+            olds: HashMap<u32, (Label, Option<u16>)>,
         },
         LoopEnd {
             label: Label,
             entries: Vec<u32>,
-            olds: HashMap<u32, (Label, Option<i32>)>,
+            olds: HashMap<u32, (Label, Option<u16>)>,
         },
     }
     let mut work: VecDeque<Work> = structure
@@ -1868,7 +1878,7 @@ fn jit_generate_function(
                     codegen::gen_move_registers_from_locals_to_memory(ctx);
                     codegen::gen_fn0_const(ctx.builder, "handle_irqs");
                     codegen::gen_update_instruction_counter(ctx);
-                    codegen::gen_return(ctx);
+                    ctx.builder.return_();
                     continue;
                 }
 
@@ -2392,7 +2402,7 @@ fn jit_generate_function(
                     for &addr in &entries {
                         let &(label, target_index) = label_for_addr.get(&addr).unwrap();
                         let &index = index_for_addr.get(&addr).unwrap();
-                        dbg_assert!(target_index.is_none() || target_index == Some(index as i32));
+                        dbg_assert!(target_index.is_none() || target_index == Some(index));
                         while index as usize >= cases.len() {
                             cases.push(leave_label.unwrap_or(brtable_default));
                         }
@@ -2455,7 +2465,7 @@ fn jit_generate_function(
                         None
                     }
                     else {
-                        Some(*index_for_addr.get(&target).unwrap() as i32)
+                        Some(*index_for_addr.get(&target).unwrap())
                     };
                     let old = label_for_addr.insert(target, (label, index));
                     if let Some(old) = old {
@@ -2499,7 +2509,7 @@ fn jit_generate_function(
                         None
                     }
                     else {
-                        Some(*index_for_addr.get(&target).unwrap() as i32)
+                        Some(*index_for_addr.get(&target).unwrap())
                     };
                     let old = label_for_addr.insert(target, (label, index));
                     if let Some(old) = old {
@@ -2535,10 +2545,8 @@ fn jit_generate_function(
         }
     }
 
-    if let Some(region) = region {
-        for addr in region.leave.keys() {
-            label_for_addr.remove(addr);
-        }
+    for (addr, _, _, _) in &leave_targets {
+        label_for_addr.remove(addr);
     }
     dbg_assert!(label_for_addr.is_empty());
 
@@ -2549,15 +2557,28 @@ fn jit_generate_function(
     {
         ctx.builder.block_end(); // main loop
     }
-    if leave_label.is_some() {
-        // leave to another region of this module
+    for &(addr, index, r, _) in leave_targets.iter().rev() {
         ctx.builder.block_end();
         codegen::gen_profiler_stat_increment(ctx.builder, stat::REGION_LEAVE);
-        codegen::gen_move_registers_from_locals_to_memory(ctx);
-        codegen::gen_update_instruction_counter(ctx);
+        codegen::gen_set_eip_low_bits(ctx.builder, addr as i32 & 0xFFF);
+        ctx.builder.const_i32(index as i32);
+        ctx.builder.get_local(&ctx.instruction_counter);
+        for i in 0..8 {
+            ctx.builder.get_local(&ctx.register_locals[i]);
+        }
+        ctx.builder.return_call_own_fn(r);
+    }
+    if let Some(region) = region {
+        // an indirect jump to another region (eip is set)
+        ctx.builder.block_end();
+        codegen::gen_profiler_stat_increment(ctx.builder, stat::REGION_LEAVE);
         let target_block = ctx.builder.arg_local_initial_state.unsafe_clone();
         ctx.builder.get_local(&target_block);
-        ctx.builder.return_();
+        ctx.builder.get_local(&ctx.instruction_counter);
+        for i in 0..8 {
+            ctx.builder.get_local(&ctx.register_locals[i]);
+        }
+        ctx.builder.return_call_own_fn(region.dispatcher);
     }
     {
         // exit with exception or due to smc
@@ -2565,7 +2586,7 @@ fn jit_generate_function(
         codegen::gen_move_registers_from_locals_to_memory(ctx);
         codegen::gen_fn0_const(ctx.builder, "exit_jit");
         codegen::gen_update_instruction_counter(ctx);
-        codegen::gen_return(ctx);
+        ctx.builder.return_();
     }
     {
         // bail: a memory access missed the fast path, the interpreter runs the instruction
@@ -2591,19 +2612,19 @@ fn jit_generate_function(
         codegen::gen_update_instruction_counter(ctx);
     }
 
-    if ctx.returns_i32 {
-        ctx.builder.const_i32(-1);
-    }
-
     if let Some((addr, start, e)) = current_block.take() {
         block_bytes.push((addr, (ctx.builder.body_len() - start) as u32, e));
     }
 
     for local in ctx.register_locals.drain(..) {
-        ctx.builder.free_local(local);
+        if region.is_none() {
+            ctx.builder.free_local(local);
+        }
     }
-    ctx.builder
-        .free_local(ctx.instruction_counter.unsafe_clone());
+    if region.is_none() {
+        ctx.builder
+            .free_local(ctx.instruction_counter.unsafe_clone());
+    }
     ctx.builder
         .free_local(ctx.bail_eip_low_bits_local.unsafe_clone());
 
@@ -3146,6 +3167,11 @@ pub unsafe fn set_jit_config(index: u32, value: u32) {
         7 => JIT_COLD_BLOCKS = value != 0,
         8 => codegen::JIT_BAIL = value != 0,
         9 => JIT_SPLIT = value,
+        10 => crate::wasmgen::wasm_builder::EXPORT_ALL = value != 0,
+        11 => JIT_SPLIT_MERGE = value != 0,
+        12 => JIT_SPLIT_CALLS = value != 0,
+        13 => JIT_SPLIT_ENTRY_CALL = value != 0,
+        14 => JIT_SPLIT_FORCE = value != 0,
         _ => dbg_assert!(false),
     }
 }

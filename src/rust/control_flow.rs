@@ -427,7 +427,12 @@ pub fn blockify(blocks: &mut Vec<WasmStructure>, edges: &Graph) {
 /// Split the blocks of a module into regions (one wasm function each): in topological order of
 /// the strongly connected groups, a group joins a region of one of its predecessors if that
 /// stays within max_bytes of guest code, else it starts a new region. A group is never split.
-pub fn regions(nodes: &Graph, max_bytes: u32, size: &dyn Fn(u32) -> u32) -> Vec<Vec<u32>> {
+pub fn regions(
+    nodes: &Graph,
+    max_bytes: u32,
+    merge_entries: bool,
+    size: &dyn Fn(u32) -> u32,
+) -> Vec<Vec<u32>> {
     let rev_nodes = rev_graph_edges(nodes);
     let groups = scc(nodes, &rev_nodes);
 
@@ -459,6 +464,14 @@ pub fn regions(nodes: &Graph, max_bytes: u32, size: &dyn Fn(u32) -> u32) -> Vec<
             .find(|(r, _)| region_bytes[*r] + bytes <= max_bytes)
         {
             Some(&(r, _)) => r,
+            // a group that only the entry reaches joins the last region if that stays small
+            None if merge_entries
+                && preds.is_empty()
+                && !regions.is_empty()
+                && region_bytes[regions.len() - 1] + bytes <= max_bytes =>
+            {
+                regions.len() - 1
+            },
             None => {
                 regions.push(Vec::new());
                 region_bytes.push(0);

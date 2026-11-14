@@ -117,14 +117,6 @@ pub fn gen_page_switch_check(
     }
 }
 
-/// Return from the generated function (a region of a split module returns -1: leave the module)
-pub fn gen_return(ctx: &mut JitContext) {
-    if ctx.returns_i32 {
-        ctx.builder.const_i32(-1);
-    }
-    ctx.builder.return_();
-}
-
 pub fn gen_update_instruction_counter(ctx: &mut JitContext) {
     ctx.builder
         .const_i32(global_pointers::instruction_counter as i32);

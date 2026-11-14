@@ -5055,7 +5055,7 @@ fn gen_popf(ctx: &mut JitContext, is_32: bool) {
         codegen::gen_fn0_const(ctx.builder, "handle_irqs");
 
         codegen::gen_update_instruction_counter(ctx);
-        codegen::gen_return(ctx);
+        ctx.builder.return_();
     }
     ctx.builder.block_end();
 

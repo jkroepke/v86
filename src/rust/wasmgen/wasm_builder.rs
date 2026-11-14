@@ -56,6 +56,8 @@ enum FunctionType {
     FN3_I32_I64_I32,
     FN3_I32_I64_I32_RET,
     FN4_I32_I64_I64_I32_RET,
+    // a region of a split module: state, instruction counter, the 8 registers
+    FN10,
     // When adding at the end, update LAST below
 }
 
@@ -65,10 +67,13 @@ impl FunctionType {
         unsafe { transmute(x) }
     }
     pub fn to_u8(self: FunctionType) -> u8 { self as u8 }
-    pub const LAST: FunctionType = FunctionType::FN4_I32_I64_I64_I32_RET;
+    pub const LAST: FunctionType = FunctionType::FN10;
 }
 
 pub const WASM_MODULE_ARGUMENT_COUNT: u8 = 1;
+
+// experiment: export every function of a module with several functions
+pub static mut EXPORT_ALL: bool = false;
 
 pub struct WasmBuilder {
     output: Vec<u8>,
@@ -93,8 +98,13 @@ pub struct WasmBuilder {
     local_count: u8,
     pub arg_local_initial_state: WasmLocal,
 
-    // finished functions of a module with more than one function: (returns i32, body)
-    functions: Vec<(bool, Vec<u8>)>,
+    // parameters (i32) of the current function; locals are numbered after them
+    arg_count: u8,
+    // calls to own functions in the current function: (offset of the 4-byte index, function)
+    own_call_fixups: Vec<(usize, u32)>,
+    // finished functions of a module with more than one function: (number of i32 parameters,
+    // body, fixups)
+    functions: Vec<(u8, Vec<u8>, Vec<(usize, u32)>)>,
 }
 
 #[derive(Eq, PartialEq)]
@@ -141,6 +151,8 @@ impl WasmBuilder {
             free_locals_i64: Vec::with_capacity(8),
             local_count: 0,
             arg_local_initial_state: WasmLocal(0),
+            arg_count: WASM_MODULE_ARGUMENT_COUNT,
+            own_call_fixups: Vec::new(),
             functions: Vec::new(),
         };
         b.init();
@@ -174,6 +186,8 @@ impl WasmBuilder {
         self.free_locals_i64.clear();
         self.local_count = 0;
         self.functions.clear();
+        self.own_call_fixups.clear();
+        self.arg_count = WASM_MODULE_ARGUMENT_COUNT;
 
         dbg_assert!(self.label_to_depth.is_empty());
         dbg_assert!(self.label_stack.is_empty());
@@ -195,8 +209,9 @@ impl WasmBuilder {
         let free_locals_i32 = &self.free_locals_i32;
         let free_locals_i64 = &self.free_locals_i64;
 
+        let arg_count = self.arg_count;
         let locals = (0..self.local_count).map(|i| {
-            let local_index = WASM_MODULE_ARGUMENT_COUNT + i;
+            let local_index = arg_count + i;
             if free_locals_i64.iter().any(|v| v.idx() == local_index) {
                 op::TYPE_I64
             }
@@ -224,6 +239,10 @@ impl WasmBuilder {
             body.push(local_type);
         }
 
+        let prefix = body.len();
+        for f in self.own_call_fixups.iter_mut() {
+            f.0 += prefix;
+        }
         body.append(&mut self.instruction_body);
         body.push(op::OP_END);
 
@@ -234,24 +253,45 @@ impl WasmBuilder {
         body
     }
 
+    /// The current function takes n i32 parameters (default 1), before any local is allocated
+    pub fn set_arg_count(&mut self, n: u8) {
+        dbg_assert!(self.local_count == 0);
+        dbg_assert!(n == 1 || n == 2 || n == 10);
+        self.arg_count = n;
+        self.arg_local_initial_state = WasmLocal(0);
+    }
+    pub fn arg_local(&self, i: u8) -> WasmLocal {
+        dbg_assert!(i < self.arg_count);
+        WasmLocal(i)
+    }
+
     /// Finish the current function of a module with several functions. Its index among the
     /// functions of the module is the number of functions finished before it. The last finished
     /// function is exported as `f`; it must take one i32 and return nothing.
-    pub fn finish_function(&mut self, returns_i32: bool) {
+    pub fn finish_function(&mut self) {
+        let arg_count = self.arg_count;
         let body = self.take_function_body();
-        self.functions.push((returns_i32, body));
+        let fixups = std::mem::take(&mut self.own_call_fixups);
+        self.functions.push((arg_count, body, fixups));
+        self.arg_count = WASM_MODULE_ARGUMENT_COUNT;
     }
 
     /// Call the function with the given index among the functions of this module. No function may
     /// be imported after this call (the index of the first own function would move).
-    pub fn call_own_fn(&mut self, index: u32) {
-        self.instruction_body.push(op::OP_CALL);
-        write_leb_u32(&mut self.instruction_body, self.import_count as u32 + index);
+    /// Tail call (return_call) of an own function
+    pub fn return_call_own_fn(&mut self, index: u32) { self.own_fn_op(op::OP_RETURN_CALL, index) }
+    pub fn call_own_fn(&mut self, index: u32) { self.own_fn_op(op::OP_CALL, index) }
+    fn own_fn_op(&mut self, opcode: u8, index: u32) {
+        // the index of the function is known in finish (imports come first)
+        self.instruction_body.push(opcode);
+        self.own_call_fixups
+            .push((self.instruction_body.len(), index));
+        self.instruction_body.extend([0x80, 0x80, 0x80, 0]);
     }
 
     fn finish_functions(&mut self) -> usize {
         dbg_assert!(self.instruction_body.is_empty());
-        dbg_assert!(self.functions.last().map_or(false, |f| !f.0));
+        dbg_assert!(self.functions.last().map_or(false, |f| f.0 == 1));
 
         let fn_count = self.functions.len();
         let first_own_fn = self.import_count as u32;
@@ -262,15 +302,34 @@ impl WasmBuilder {
         self.output.push(op::SC_FUNCTION);
         let mut section = Vec::new();
         write_leb_u32(&mut section, fn_count as u32);
-        for (returns_i32, _) in &self.functions {
-            section.push(if *returns_i32 { FunctionType::FN1_RET } else { FunctionType::FN1 }.to_u8());
+        for (arg_count, _, _) in &self.functions {
+            section.push(
+                match arg_count {
+                    1 => FunctionType::FN1,
+                    2 => FunctionType::FN2,
+                    _ => FunctionType::FN10,
+                }
+                .to_u8(),
+            );
         }
         write_leb_u32(&mut self.output, section.len() as u32);
         self.output.append(&mut section);
 
         // export section: the last function as f
         let mut section = Vec::new();
-        section.push(1);
+        if unsafe { EXPORT_ALL } {
+            write_leb_u32(&mut section, fn_count as u32);
+            for i in 0..fn_count as u32 - 1 {
+                let name = format!("{}", i);
+                section.push(name.len() as u8);
+                section.extend(name.as_bytes());
+                section.push(op::EXT_FUNCTION);
+                write_leb_u32(&mut section, first_own_fn + i);
+            }
+        }
+        else {
+            section.push(1);
+        }
         section.push(1);
         section.push('f' as u8);
         section.push(op::EXT_FUNCTION);
@@ -282,7 +341,10 @@ impl WasmBuilder {
         // code section
         let mut section = Vec::new();
         write_leb_u32(&mut section, fn_count as u32);
-        for (_, body) in self.functions.drain(..) {
+        for (_, mut body, fixups) in self.functions.drain(..) {
+            for (offset, index) in fixups {
+                write_fixed_leb32_at_idx(&mut body, offset, first_own_fn + index);
+            }
             write_leb_u32(&mut section, body.len() as u32);
             section.extend(body);
         }
@@ -543,6 +605,14 @@ impl WasmBuilder {
                     self.output.push(1);
                     self.output.push(op::TYPE_I32);
                 },
+                FunctionType::FN10 => {
+                    self.output.push(op::TYPE_FUNC);
+                    self.output.push(10);
+                    for _ in 0..10 {
+                        self.output.push(op::TYPE_I32);
+                    }
+                    self.output.push(0);
+                },
             }
         }
 
@@ -694,7 +764,7 @@ impl WasmBuilder {
         match self.free_locals_i32.pop() {
             Some(local) => local,
             None => {
-                let new_idx = self.local_count + WASM_MODULE_ARGUMENT_COUNT;
+                let new_idx = self.local_count + self.arg_count;
                 self.local_count = self.local_count.checked_add(1).unwrap();
                 WasmLocal(new_idx)
             },
@@ -702,7 +772,7 @@ impl WasmBuilder {
     }
     pub fn free_local(&mut self, local: WasmLocal) {
         dbg_assert!(
-            (WASM_MODULE_ARGUMENT_COUNT..self.local_count + WASM_MODULE_ARGUMENT_COUNT)
+            (self.arg_count..self.local_count + self.arg_count)
                 .contains(&local.0)
         );
         self.free_locals_i32.push(local)
@@ -740,7 +810,7 @@ impl WasmBuilder {
         match self.free_locals_i64.pop() {
             Some(local) => local,
             None => {
-                let new_idx = self.local_count + WASM_MODULE_ARGUMENT_COUNT;
+                let new_idx = self.local_count + self.arg_count;
                 self.local_count += 1;
                 WasmLocalI64(new_idx)
             },
@@ -748,7 +818,7 @@ impl WasmBuilder {
     }
     pub fn free_local_i64(&mut self, local: WasmLocalI64) {
         dbg_assert!(
-            (WASM_MODULE_ARGUMENT_COUNT..self.local_count + WASM_MODULE_ARGUMENT_COUNT)
+            (self.arg_count..self.local_count + self.arg_count)
                 .contains(&local.0)
         );
         self.free_locals_i64.push(local)
