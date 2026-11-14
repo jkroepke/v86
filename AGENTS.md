@@ -451,7 +451,15 @@ connection per request over the network adapter of v86, release build of 60e7e76
     costs ~70 ns and an interpreted block ~330 ns. 3 or 8 pages per module
     (`set_jit_config(1, n)`), so that calls and returns stay in a module: 6.6-6.7 and
     6.4-6.9 ms against 6.5-7.2 ms (2 alternating runs each, noise), process CPU +5 % and
-    +25 %. Not kept.
+    +25 %. Not kept. With 8 pages the entries fall by 42 % (45k -> 26k per request, 18
+    instructions each) and the time does not: an entry is not what costs. The code does
+    0.6 memory accesses per instruction (JIT code ~6 ns per instruction, the shell loop
+    of `loop` ~2). A lower JIT threshold only moves the time: with 100k and 30k (after 3000
+    requests) the interpreter is 11 % and 7 % of the main thread instead of 28 %, JIT code
+    55 % and 57 % instead of 41 %, a request 7.1-7.4 and 7.2-7.3 ms against 7.3-7.9 ms.
+    It is not the compiler tier of V8 either: `node --no-liftoff` (TurboFan for all code)
+    6.9-7.5 ms against 6.5-6.7 ms, `--liftoff-only` 8.5-8.9 ms (that includes the
+    interpreter of v86.wasm on baseline code). The steady state of spring is flat.
 
 ## Instruction set extensions: what pays (measured 2026-11-13)
 
