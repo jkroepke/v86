@@ -927,11 +927,12 @@ V86.prototype.jit_record_start = function()
  * The modules of the JIT for kernel code (cpl 0) that are in use, packed. A later instance of
  * the same v86.wasm whose guest has the same kernel at the same physical pages (for example
  * after restoring the same state) can use them through jit_prepare and jit_import.
+ * @param {number=} limit at most this many modules, the most entered ones
  * @return {ArrayBuffer}
  */
-V86.prototype.jit_export = function()
+V86.prototype.jit_export = function(limit)
 {
-    return this.v86.cpu.jit_export(true);
+    return this.v86.cpu.jit_export(true, limit);
 };
 
 /**

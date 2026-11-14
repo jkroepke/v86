@@ -1843,27 +1843,33 @@ CPU.prototype.jit_record_start = function()
 
 /**
  * @param {boolean} kernel_only only modules of code that ran with cpl 0
+ * @param {number=} limit at most this many modules, the most entered ones
  * @return {ArrayBuffer}
  */
-CPU.prototype.jit_export = function(kernel_only)
+CPU.prototype.jit_export = function(kernel_only, limit)
 {
     dbg_assert(this.jit_record, "jit_export needs jit_record_start");
     const ex = this.wm.exports;
     const get = ex["jit_export_get"];
     const n = ex["jit_export_collect"](!!kernel_only);
-    const parts = [];
-    let size = 16;
+    let list = [];
     for(let i = 0; i < n; i++)
     {
-        const index = get(i, 1);
-        const bytes = this.jit_record.get(index);
-        if(!bytes) continue;
+        const bytes = this.jit_record.get(get(i, 1));
+        if(bytes) list.push({ i, bytes, use: get(i, 4) });
+    }
+    list.sort((a, b) => b.use - a.use);
+    if(limit) list = list.slice(0, limit);
+    const parts = [];
+    let size = 16;
+    for(const { i, bytes } of list)
+    {
         const page = get(i, 0);
         const k = get(i, 3);
         const head = new Uint32Array(7 + k);
         const [h1, h2] = jit_page_hash(this.mem8, page);
-        head.set([page, index, get(i, 2), h1, h2, k, bytes.length]);
-        for(let j = 0; j < k; j++) head[7 + j] = get(i, 4 + 2 * j) | get(i, 5 + 2 * j) << 16;
+        head.set([page, get(i, 1), get(i, 2), h1, h2, k, bytes.length]);
+        for(let j = 0; j < k; j++) head[7 + j] = get(i, 5 + 2 * j) | get(i, 6 + 2 * j) << 16;
         parts.push(head, bytes);
         size += head.byteLength + (bytes.length + 3 & ~3);
     }
@@ -1908,7 +1914,31 @@ export async function jit_prepare(buffer)
         });
     }
     for(const m of list) m["module"] = await m["module"];
+    jit_compile_now(list);
     return { "layout": head[2], "modules": list };
+}
+
+// V8 compiles the function of a module at its first call, which would be on the thread of the
+// first instance that runs it. So each function is called once here, in an instance of its own
+// with a scratch memory whose imports throw: it stops at its first access outside the scratch
+// memory, its first import or its loop limit (JIT_USE_LOOP_SAFETY). The compiled code stays
+// with the Module.
+function jit_compile_now(list)
+{
+    const memory = new WebAssembly.Memory({ "initial": 64 });
+    const stop = () => { throw new Error("stop"); };
+    const imports = new Proxy({}, { get: (_, k) => k === "m" ? memory : stop });
+    for(const m of list)
+    {
+        try
+        {
+            new WebAssembly.Instance(m["module"], { "e": imports }).exports["f"](0);
+        }
+        catch(e)
+        {
+            // the expected end
+        }
+    }
 }
 
 /**
@@ -1919,7 +1949,7 @@ export async function jit_prepare(buffer)
 CPU.prototype.jit_import = function(prepared)
 {
     const ex = this.wm.exports;
-    if(prepared["layout"] !== ex["jit_layout_id"]())
+    if(prepared["layout"] !== ex["jit_layout_id"]() >>> 0)
     {
         return 0;
     }

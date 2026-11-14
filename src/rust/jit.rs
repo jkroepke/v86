@@ -2949,7 +2949,8 @@ pub fn jit_export_collect(kernel_only: bool) -> u32 {
         EXPORT_LIST.len() as u32
     }
 }
-// what: 0 page, 1 table index, 2 state flags, 3 number of entry points, 4 + 2k / 5 + 2k entry k
+// what: 0 page, 1 table index, 2 state flags, 3 number of entry points, 4 entries into the
+// module (MODULE_USE), 5 + 2k / 6 + 2k entry point k
 #[no_mangle]
 #[allow(static_mut_refs)]
 pub fn jit_export_get(i: u32, what: u32) -> u32 {
@@ -2961,9 +2962,10 @@ pub fn jit_export_get(i: u32, what: u32) -> u32 {
         1 => info.wasm_table_index.to_u16() as u32,
         2 => info.state_flags.to_u32(),
         3 => info.entry_points.len() as u32,
+        4 => unsafe { MODULE_USE[info.wasm_table_index.to_u16() as usize] },
         n => {
-            let (a, s) = info.entry_points[((n - 4) / 2) as usize];
-            if n & 1 == 0 { a as u32 } else { s as u32 }
+            let (a, s) = info.entry_points[((n - 5) / 2) as usize];
+            if n & 1 == 1 { a as u32 } else { s as u32 }
         },
     }
 }

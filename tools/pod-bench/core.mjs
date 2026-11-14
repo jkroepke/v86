@@ -247,7 +247,7 @@ async function pod(state, wl, rec) {
     const arr = (kind, n) => { const out = []; for (let i = 0; i < n; i++) { const v = g(kind, i); if (v) out.push([i, v]); } return out; };
     O.gstatOut({ names: O.gstat, counters: O.gstat.map((_, i) => g(0, i)), vectors: arr(1, 256), syscalls: arr(2, 512), syscallInstr: arr(3, 512), portReads: arr(4, 65536), portWrites: arr(5, 65536), khist: arr(6, 1 << 20), uhist: arr(7, 1 << 20), wallMs: r.done, cpuMs: r.cpu });
   }
-  if (rec) rec.out = e.jit_export();
+  if (rec) rec.out = e.jit_export(O.kjitTop);
   await e.destroy();
   return r;
 }
