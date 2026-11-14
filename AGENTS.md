@@ -330,6 +330,51 @@ Counters of `src/rust/gueststat.rs` (`GSTAT=` of `tools/pod-bench`), Linux
   a hash of the page) and a VM state saved after the app answered. The
   kernel modules are the part of that idea that every pod shares.
 
+## Applications after their start (measured 2026-11-14)
+
+`STEADY=1` of `tools/pod-bench` measures requests after a warm-up. Node.js, one new
+connection per request over the network adapter of v86, release build of 60e7e76:
+
+| workload | per request | guest instructions | kernel | after |
+|----------|-------------|--------------------|--------|-------|
+| nginx `/` | 4.0 ms (2.4-2.9 ms after 1000+) | 0.19M | 88 % | 20 requests |
+| goapp `/metrics` | 10-11 ms (9.5 ms after 1000+) | 2.8M | 17 % | 200 |
+| spring `/` | 18 ms, then 5.3-6 ms | 2.6M, then 0.54M | 18 % | 100, then ~2000 (the JVM compiles its own code) |
+| loop (shell, awk, gzip) | 800 ms per tick | 412M | - | 3 ticks |
+
+- The 70-85 ms per scrape of goapp are its warm-up: the first 10 scrapes take ~28 ms of
+  CPU each, ~14 ms after 100, ~10 ms after 300.
+- ns per guest instruction in the steady state (GSTAT): loop ~2, goapp user 2.8 and kernel
+  7-8, nginx kernel 12-15, spring user 9-10 and kernel 17. The slow code is code that leaves
+  its JIT module often: 10 (spring), 23 (kernel) and 30 (Go) instructions per entry.
+- Main thread (perf with jitdump, only the measured requests): JIT code 40-53 %, the
+  interpreter 12-31 %, main_loop 11-16 %, jump tables of the modules 4-6 %; the network
+  adapter, 9p and the UART in JS are only 2-4 %.
+- Module entries cost more than the ~17 ns measured before, and the cost depends on how
+  many modules are in use: V8 gives every wasm module its own code space. A micro
+  benchmark (one call_indirect site, functions in a random cycle, 3.5 KB of wasm each):
+  64 modules 7 ns per call, 256 modules 24-26 ns, 1024 modules 156 ns; the same functions
+  in modules of 16 functions: 6, 6-8 and 18 ns (Node.js 22 and Chromium 153 alike). The
+  entries of goapp go to ~220 modules (90 % to 110), of spring to ~820 (90 % to 214). So
+  several pages (one function each) in one wasm module should cut the cost per entry.
+- nginx: sendfile is 46k kernel instructions per request, close 24k, write 20k (the
+  access log goes byte by byte to the UART: 84 port writes and 4 interrupts per request).
+- goapp: 15 reads (/proc) of 15k and 3 socket writes of 49k kernel instructions per scrape.
+- Dead ends:
+  - Modules that enter the next module themselves (return_call_indirect through the
+    table, with the checks of cycle_internal in the epilogue, 87 % of the entries
+    chained): goapp +8 % CPU in Node.js 22 (its indirect tail calls are 2-4x slower than
+    call + return), no change in Chromium 153.
+  - Compiling the rest of the interpreted code sooner: with JIT_THRESHOLD 30k, spring
+    after 3000 requests interprets 6 % instead of 24 % of its user instructions, but the
+    time per request does not change (6.0 against 5.6-6.4 ms): that code leaves the
+    module every ~10 instructions, interpreted or not. goapp after 2000 scrapes interprets
+    1.3 % and is only ~5 % faster than after 200 (8 %). A rule that compiles pages that
+    ran in two epochs of 1 s and collected 50k instructions: goapp after 200 scrapes -6 %
+    CPU, but spring start +4 % main thread and +24 % process CPU. Not kept.
+  - Pages per module (`set_jit_config(1, n)`) 3 or 8: goapp and nginx in the steady state
+    within the noise.
+
 ## Instruction set extensions: what pays (measured 2026-11-13)
 
 - Who uses them in an i386 pod: OpenSSL (SHA-1/256 with SHA: 5-6x fewer
