@@ -81,9 +81,11 @@ await run({
   spring: fs.existsSync(springJSON) ? JSON.parse(fs.readFileSync(springJSON)) : null,
   hook, cpu, pcpu, stats, gstat, gstatOut, idleMs: Number(process.env.IDLE_MS || 0), scrapes: process.env.SCRAPES ? Number(process.env.SCRAPES) : undefined,
   steady: process.env.STEADY === "1", warm: process.env.WARM ? Number(process.env.WARM) : undefined, reqs: process.env.REQS ? Number(process.env.REQS) : undefined, curve: Number(process.env.CURVE || 0), httpTimeout: Number(process.env.HTTP_TIMEOUT || 0), cmdline: process.env.CMDLINE, mods, v86dir: V86DIR, read, workload, rounds: Number(rounds),
-  jitcfg: process.env.JITCFG, kjitThreshold: Number(process.env.KJIT || 0), kjitWorkload: process.env.KJIT_WL, kjitTop: Number(process.env.KJIT_TOP || 0),
+  jitcfg: process.env.JITCFG, kjitThreshold: Number(process.env.KJIT || 0), kjitWorkload: process.env.KJIT_WL, kjitTop: Number(process.env.KJIT_TOP || 0), kjitWarm: Number(process.env.KJIT_WARM || 0),
   kjitBlob: process.env.KJIT_FILE && fs.existsSync(process.env.KJIT_FILE) ? new Uint8Array(fs.readFileSync(process.env.KJIT_FILE)).buffer : undefined,
   onKjit: process.env.KJIT_FILE ? (b) => fs.writeFileSync(process.env.KJIT_FILE, new Uint8Array(b)) : undefined, cpuhide: process.env.CPUHIDE, script: process.env.SCRIPT,
+  state: process.env.STATE_FILE && fs.existsSync(process.env.STATE_FILE) ? new Uint8Array(fs.readFileSync(process.env.STATE_FILE)).buffer : undefined,
+  onState: process.env.STATE_FILE ? (b) => { if (!fs.existsSync(process.env.STATE_FILE)) fs.writeFileSync(process.env.STATE_FILE, new Uint8Array(b)); } : undefined,
   v86opts: process.env.V86OPTS && JSON.parse(process.env.V86OPTS), log: console.log,
 });
 process.exit(0);
