@@ -71,6 +71,8 @@ export function CPU(bus, wm, stop_idling)
     this.jit_gen = new Uint32Array(WASM_TABLE_SIZE);
     this.jit_unpacked = new Map();
     this.jit_pack_size = +globalThis["V86_PACK"] || 0;
+    this.jit_packed = 0;
+    this.jit_pack_stale = 0;
 
     const memory = this.wm.exports.memory;
 
@@ -1966,8 +1968,17 @@ CPU.prototype.jit_pack = function()
         {
             const index = entries[i][0];
             // not a module that was dropped or replaced meanwhile
-            if(this.jit_gen[index] === gens[i]) this.wm.wasm_table.set(index + WASM_TABLE_OFFSET, ex["f" + i]);
+            if(this.jit_gen[index] === gens[i])
+            {
+                this.wm.wasm_table.set(index + WASM_TABLE_OFFSET, ex["f" + i]);
+                this.jit_packed++;
+            }
+            else
+            {
+                this.jit_pack_stale++;
+            }
         }
+        globalThis["V86_PACK_STATS"] = [this.jit_packed, this.jit_pack_stale];
     });
 };
 

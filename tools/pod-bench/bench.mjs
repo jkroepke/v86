@@ -93,4 +93,5 @@ await run({
   prewarm: process.env.PREWARM, prewarmSleep: process.env.PREWARM_SLEEP ? Number(process.env.PREWARM_SLEEP) : undefined, tinyScript: process.env.TINY,
   v86opts: process.env.V86OPTS && JSON.parse(process.env.V86OPTS), log: console.log,
 });
+if (globalThis.V86_PACK_STATS) console.log("packed modules, stale:", globalThis.V86_PACK_STATS.join(", "));
 process.exit(0);
