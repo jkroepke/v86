@@ -236,7 +236,12 @@ function gen_instruction_body_after_prefix(encodings, size)
 function gen_instruction_body_after_fixed_g(encoding, size)
 {
     const instruction_prefix = [];
+    // Direct jumps (no_block_boundary_in_interpreted) do not end the block of the interpreter:
+    // it goes on while the target is in the same page. Returns and indirect jumps
+    // (same_page_in_interpreted) go on, too, when their target is in the same page and the page
+    // has no compiled code; the target is recorded as an entry point
     const instruction_postfix =
+        encoding.same_page_in_interpreted ? ["after_indirect_jump();"] :
         (encoding.block_boundary && !encoding.no_block_boundary_in_interpreted) ||
         (!encoding.custom && encoding.e) ?
         ["after_block_boundary();"] : [];
@@ -419,7 +424,7 @@ function gen_table()
         const code = [
             "#![cfg_attr(rustfmt, rustfmt_skip)]",
 
-            "use crate::cpu::cpu::{after_block_boundary, modrm_resolve, read_modrm_byte};",
+            "use crate::cpu::cpu::{after_block_boundary, after_indirect_jump, modrm_resolve, read_modrm_byte};",
             "// the immediate values are read inline in this table",
             "use crate::cpu::cpu::{read_imm8_inline as read_imm8, read_imm8s_inline as read_imm8s};",
             "use crate::cpu::cpu::{read_imm16_inline as read_imm16, read_imm32s_inline as read_imm32s};",

@@ -1924,6 +1924,23 @@ pub unsafe fn do_task_switch(selector: i32, error_code: Option<i32>, source: Tas
 
 pub unsafe fn after_block_boundary() { interpreter_page = BLOCK_END; }
 
+// After a return or an indirect jump of the interpreter: the block goes on when the target is in
+// the page of the block and the page has no compiled code (else the target may be an entry of a
+// module). The target is recorded as an entry point of the page, like a block that starts there:
+// a module looks the target of a return up in its entry points. The hotness goes to the page at
+// the end of the block, as for jumps inside the page.
+#[inline(always)]
+pub unsafe fn after_indirect_jump() {
+    let eip = *instruction_pointer;
+    if eip & !0xFFF == interpreter_page && tlb_code[(eip as u32 >> 12) as usize].is_none() {
+        profiler::stat_increment(stat::INTERPRETER_SAME_PAGE_INDIRECT);
+        jit::note_entry_point((*eip_phys ^ eip) as u32);
+    }
+    else {
+        interpreter_page = BLOCK_END;
+    }
+}
+
 #[no_mangle]
 pub fn track_jit_exit(phys_addr: u32) {
     unsafe {

@@ -2450,6 +2450,37 @@ fn jit_generate_basic_block(ctx: &mut JitContext, block: &BasicBlock) {
     }
 }
 
+// An entry point that the interpreter reached inside a block (the target of a return in the
+// same page): only recorded, the hotness goes to the page at the end of the block
+#[inline(always)]
+pub fn note_entry_point(phys_address: u32) {
+    if unsafe { JIT_DISABLED } {
+        return;
+    }
+    let known =
+        unsafe { std::ptr::addr_of_mut!(KNOWN_ENTRY_POINTS[known_entry_point_index(phys_address)]) };
+    if unsafe { *known } != !phys_address {
+        note_entry_point_slow(phys_address);
+    }
+}
+
+#[cold]
+#[inline(never)]
+fn note_entry_point_slow(phys_address: u32) {
+    let page = Page::page_of(phys_address);
+    let mut ctx = get_jit_state();
+    let entry_points = ctx.entry_points.entry(page).or_insert_with(|| {
+        cpu::tlb_set_has_code(page, true);
+        marks_alloc(page);
+        profiler::stat_increment(stat::RUN_INTERPRETED_NEW_PAGE);
+        HashSet::default()
+    });
+    if !is_near_end_of_page(phys_address) {
+        entry_points.insert(phys_address as u16 & 0xFFF);
+        unsafe { KNOWN_ENTRY_POINTS[known_entry_point_index(phys_address)] = !phys_address };
+    }
+}
+
 pub fn jit_increase_hotness_and_maybe_compile(
     virt_address: i32,
     phys_address: u32,

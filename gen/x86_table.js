@@ -176,8 +176,8 @@ const encodings = [
     { opcode: 0xF2AF, block_boundary: 1, custom: 1, is_string: 1, os: 1 },
     { opcode: 0xF3AF, block_boundary: 1, custom: 1, is_string: 1, os: 1 },
 
-    { opcode: 0xC2, custom: 1, block_boundary: 1, no_next_instruction: 1, os: 1, absolute_jump: 1, imm16: 1, skip: 1 }, // ret
-    { opcode: 0xC3, custom: 1, block_boundary: 1, no_next_instruction: 1, os: 1, absolute_jump: 1, skip: 1 },
+    { opcode: 0xC2, custom: 1, block_boundary: 1, same_page_in_interpreted: 1, no_next_instruction: 1, os: 1, absolute_jump: 1, imm16: 1, skip: 1 }, // ret
+    { opcode: 0xC3, custom: 1, block_boundary: 1, same_page_in_interpreted: 1, no_next_instruction: 1, os: 1, absolute_jump: 1, skip: 1 },
 
     { opcode: 0xC4, block_boundary: 1, os: 1, e: 1, skip: 1 }, // les
     { opcode: 0xC5, block_boundary: 1, os: 1, e: 1, skip: 1 }, // lds
@@ -286,7 +286,7 @@ const encodings = [
     { opcode: 0xE6, block_boundary: 1, imm8: 1, skip: 1 }, // out
     { opcode: 0xE7, block_boundary: 1, os: 1, imm8: 1, skip: 1 },
 
-    { opcode: 0xE8, block_boundary: 1, jump_offset_imm: 1, os: 1, imm1632: 1, custom: 1, skip: 1 }, // call
+    { opcode: 0xE8, block_boundary: 1, no_block_boundary_in_interpreted: 1, jump_offset_imm: 1, os: 1, imm1632: 1, custom: 1, skip: 1 }, // call
     { opcode: 0xE9, block_boundary: 1, no_block_boundary_in_interpreted: 1, jump_offset_imm: 1, no_next_instruction: 1, os: 1, imm1632: 1, custom: 1, skip: 1 },
     { opcode: 0xEA, block_boundary: 1, no_next_instruction: 1, os: 1, imm1632: 1, extra_imm16: 1, skip: 1 }, // jmpf
     { opcode: 0xEB, block_boundary: 1, no_block_boundary_in_interpreted: 1, jump_offset_imm: 1, no_next_instruction: 1, os: 1, imm8s: 1, custom: 1, skip: 1 },
@@ -334,9 +334,9 @@ const encodings = [
     { opcode: 0xFE, e: 1, fixed_g: 1, custom: 1 },
     { opcode: 0xFF, os: 1, e: 1, fixed_g: 0, custom: 1 },
     { opcode: 0xFF, os: 1, e: 1, fixed_g: 1, custom: 1 },
-    { opcode: 0xFF, os: 1, e: 1, fixed_g: 2, custom: 1, block_boundary: 1, absolute_jump: 1, skip: 1 },
+    { opcode: 0xFF, os: 1, e: 1, fixed_g: 2, custom: 1, block_boundary: 1, same_page_in_interpreted: 1, absolute_jump: 1, skip: 1 },
     { opcode: 0xFF, os: 1, e: 1, fixed_g: 3, block_boundary: 1, skip: 1 },
-    { opcode: 0xFF, os: 1, e: 1, fixed_g: 4, custom: 1, block_boundary: 1, absolute_jump: 1, no_next_instruction: 1, skip: 1 },
+    { opcode: 0xFF, os: 1, e: 1, fixed_g: 4, custom: 1, block_boundary: 1, same_page_in_interpreted: 1, absolute_jump: 1, no_next_instruction: 1, skip: 1 },
     { opcode: 0xFF, os: 1, e: 1, fixed_g: 5, block_boundary: 1, no_next_instruction: 1, skip: 1 },
     { opcode: 0xFF, custom: 1, os: 1, e: 1, fixed_g: 6 },
 
