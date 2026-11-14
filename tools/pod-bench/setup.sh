@@ -25,7 +25,7 @@ if [ ! -f data/goapp.tar ] && command -v go >/dev/null; then
   mkdir -p "$tmp/root/etc" "$tmp/root/tmp" "$tmp/root/dev" "$tmp/root/proc" "$tmp/root/sys"
   (cd "$tmp/src" && CGO_ENABLED=0 GOOS=linux GOARCH=386 go build -trimpath -ldflags "-s -w" \
     -o "$tmp/root/access-log-exporter" ./cmd/access-log-exporter)
-  cp "$tmp/src/packaging/etc/config.yaml" "$tmp/root/config.yaml"
+  cp "$tmp/src/packaging/etc/access-log-exporter/config.yaml" "$tmp/root/config.yaml"
   echo 'root:x:0:0:root:/:/bin/sh' > "$tmp/root/etc/passwd"
   tar -C "$tmp/root" -cf data/goapp.tar .
   rm -rf "$tmp"

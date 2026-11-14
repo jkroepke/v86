@@ -90,6 +90,7 @@ const confs = () => ({
   warm: ["alpine", { args: ["/bin/sh", "-c", WARM_SCRIPT], env: [PATH], cwd: "/" }],
   nginx: ["nginx", { args: ["/docker-entrypoint.sh", "nginx", "-g", "daemon off;"], env: [PATH, "NGINX_VERSION=1"], cwd: "/" }],
   spring: ["spring", O.spring],
+  tiny: ["alpine", { args: ["/bin/sh", "-c", O.tinyScript || "echo done"], env: [PATH], cwd: "/" }],
   cpu: ["alpine", { args: ["/bin/sh", "-c", O.script || DEFAULT_SCRIPT], env: [PATH], cwd: "/" }],
   simd: ["micro", { args: ["/micro", globalThis.process?.env?.MICRO_N || "8000"], env: [PATH], cwd: "/" }],
   // a static Go binary (jkroepke/access-log-exporter, GOARCH=386): Go runtime start, then /metrics
@@ -233,8 +234,10 @@ async function pod(state, wl, rec) {
     } else {
       await until("exit", () => control.some((l) => l.startsWith("exit")));
       if (!con.some((l) => l.includes("done"))) throw new Error("cpu workload failed: " + con.join("\n"));
+      if (wl !== "tiny") {
       const sums = con.filter((l) => / (-|\/tmp\/b)$/.test(l)).map((l) => l.split(" ")[0]);
       if (sums.length !== 2 || sums[0] !== sums[1]) throw new Error("checksums differ: " + con.join("\n"));
+      }
     }
   } catch (err) { console.error(control, con.join("\n")); throw err; }
   r.done = performance.now() - t0;
@@ -270,6 +273,22 @@ async function pod(state, wl, rec) {
 }
 
 
+// PREWARM=init: the "warm" command of init (tabernetes vm/init) in a VM that is thrown away
+async function initWarm(state) {
+  const e = new V86(options());
+  await new Promise((r) => e.add_listener("emulator-loaded", r));
+  await e.restore_state(state);
+  if (O.kjit) e.jit_import(O.kjit);
+  const control = lines(e, 1);
+  const i0 = e.v86.cpu.instruction_counter[0];
+  e.run();
+  e.serial_send_bytes(1, new TextEncoder().encode("warm\n"));
+  await until("warmed", () => control.includes("warmed"));
+  const minstr = ((e.v86.cpu.instruction_counter[0] - i0) >>> 0) / 1e6;
+  await e.destroy();
+  return { minstr };
+}
+
 export async function run(o) {
   O = o; ({ V86, initramfs, bootKernel, Tree, LayerStorage, modes } = o.mods);
   const log = o.log;
@@ -289,6 +308,13 @@ export async function run(o) {
     const t = performance.now();
     O.kjit = await V86.jit_prepare(blob);
     log(`kjit: ${O.kjit.modules.length} kernel modules, ${(blob.byteLength / 1024).toFixed(0)} KiB, prepared in ${(performance.now() - t).toFixed(0)} ms`);
+  }
+  if (o.prewarm) {
+    // PREWARM=<workload>: one start before the rounds, then a pause: what does warm code of v86.wasm give the first round?
+    const t = performance.now(), c = o.cpu?.() ?? 0;
+    const r = o.prewarm === "init" ? await initWarm(b.state) : await pod(b.state, o.prewarm);
+    log(`prewarm ${o.prewarm}: ${(performance.now() - t).toFixed(0)} ms, cpu ${((o.cpu?.() ?? 0) - c).toFixed(0)} ms, ${r.minstr.toFixed(1)}M instr`);
+    await sleep(o.prewarmSleep ?? 1500);
   }
   const res = [];
   for (let i = 0; i < o.rounds; i++) {

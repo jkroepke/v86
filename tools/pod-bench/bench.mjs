@@ -84,6 +84,9 @@ await run({
   jitcfg: process.env.JITCFG, kjitThreshold: Number(process.env.KJIT || 0), kjitWorkload: process.env.KJIT_WL, kjitTop: Number(process.env.KJIT_TOP || 0),
   kjitBlob: process.env.KJIT_FILE && fs.existsSync(process.env.KJIT_FILE) ? new Uint8Array(fs.readFileSync(process.env.KJIT_FILE)).buffer : undefined,
   onKjit: process.env.KJIT_FILE ? (b) => fs.writeFileSync(process.env.KJIT_FILE, new Uint8Array(b)) : undefined, cpuhide: process.env.CPUHIDE, script: process.env.SCRIPT,
+  state: process.env.STATE_FILE && fs.existsSync(process.env.STATE_FILE) ? new Uint8Array(fs.readFileSync(process.env.STATE_FILE)).buffer : undefined,
+  onState: process.env.STATE_FILE ? (s) => fs.existsSync(process.env.STATE_FILE) || fs.writeFileSync(process.env.STATE_FILE, new Uint8Array(s)) : undefined,
+  prewarm: process.env.PREWARM, prewarmSleep: process.env.PREWARM_SLEEP ? Number(process.env.PREWARM_SLEEP) : undefined, tinyScript: process.env.TINY,
   v86opts: process.env.V86OPTS && JSON.parse(process.env.V86OPTS), log: console.log,
 });
 process.exit(0);
