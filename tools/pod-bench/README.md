@@ -56,7 +56,8 @@ instructions (32-bit counter: wraps for spring). Run-to-run noise is about
   x.cpuprofile` groups it (JIT code, main_loop, interpreter, ...)
 - `GSTAT=x.json`: write the counters of `src/rust/gueststat.rs` for the last round
   (needs `make with-profiler`, or `V86_GUESTSTAT=1 make build/v86.wasm` for a release
-  build with only these counters). `node gstat.cjs x.json [System.map] [syscall_32.tbl]`
+  build with only these counters; the file also has the calls and jumps between kernel
+  functions that the interpreter ran, for `korder.cjs`). `node gstat.cjs x.json [System.map] [syscall_32.tbl]`
   prints them: user and kernel instructions and host time, system calls, interrupts, port
   I/O, page faults, TLB flushes, and the kernel functions when `System.map` belongs to
   the `vmlinux` in `VMDIR` (`SYM2OBJ=` groups them by source file: lines of
@@ -71,6 +72,25 @@ instructions (32-bit counter: wraps for spring). Run-to-run noise is about
   ones. `KJIT_FILE` writes them there, or reads
   them if the file exists. `warm` is a generic busybox start for this (processes, 9p, pipes,
   TCP over loopback)
+- `KJIT_WARM=n`: call each kernel module n times in a scratch instance before the first
+  round (like `warm` in tabernetes `web/src/jit.js`, which uses 3000), then wait
+  `KJIT_WARM_WAIT` ms (default 1000) for TurboFan; round 0 is then the first pod of a tab
+- `STATE_FILE=x.bin`: read the saved VM state from this file instead of booting the kernel
+  first (written by the first run). The first pod then starts in a v86.wasm that has not run
+  before, like the first pod of a tab in tabernetes
+- `READINTO=1`: the image layers answer reads synchronously, like the OPFS sync access
+  handles of tabernetes; without it, the first read of each file waits for a promise (the
+  guest idles)
+- `kpages.cjs System.map x.json...`: on how many kernel pages 50/90/99 % of the kernel
+  instructions of a GSTAT recording ran, against an ideal order; checks `korder.cjs`
+- `korder.cjs`: an order of the kernel functions for `ld.lld --symbol-ordering-file`, so that
+  hot kernel code that calls each other shares pages (tabernetes `vm/kernel-order.txt`).
+  Record with a `V86_GUESTSTAT=1` build and the interpreter only, then
+  `node korder.cjs System.map a.json b.json ... > order.txt`:
+
+      for wl in warm nginx goapp glibc; do
+        JITCFG=4=2000000000 VMDIR=<vm with System.map> GSTAT=/tmp/$wl.json node bench.mjs $wl 1
+      done
 - `ab.sh <workload> <reps> <dirA> <dirB>`: alternating runs of two builds
 - `BENCH_DATA`, `VMDIR`, `TABERNETES_SRC`: other locations of the data
 

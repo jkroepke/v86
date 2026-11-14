@@ -70,6 +70,40 @@ static mut KHIST: [u32; KBUCKETS * N] = [0; KBUCKETS * N];
 // Sampled user pages (virtual page number -> samples)
 static mut UHIST: [u32; 0x100000 * N] = [0; 0x100000 * N];
 
+// Kernel call edges (call rel, call through a register or memory, jmp rel), recorded by the
+// interpreter: open addressing, key (caller - KTEXT) << 24 | (target - KTEXT), plus one
+const EDGES: usize = 1 << 17;
+static mut EKEYS: [u64; EDGES * N] = [0; EDGES * N];
+static mut ECNT: [u32; EDGES * N] = [0; EDGES * N];
+
+#[inline(always)]
+pub fn edge(cpl: u8, from: i32, to: i32) {
+    if !ON || cpl != 0 {
+        return;
+    }
+    let a = (from as u32).wrapping_sub(KTEXT);
+    let b = (to as u32).wrapping_sub(KTEXT);
+    if a >= 1 << 24 || b >= 1 << 24 {
+        return;
+    }
+    let key = ((a as u64) << 24 | b as u64) + 1;
+    unsafe {
+        let mut i = (key.wrapping_mul(0x9E3779B97F4A7C15) >> 47) as usize & (EDGES - 1);
+        for _ in 0..EDGES {
+            if EKEYS[i] == key {
+                ECNT[i] += 1;
+                return;
+            }
+            if EKEYS[i] == 0 {
+                EKEYS[i] = key;
+                ECNT[i] = 1;
+                return;
+            }
+            i = (i + 1) & (EDGES - 1);
+        }
+    }
+}
+
 // Why the guest is in the kernel: the last entry from user mode
 static mut CAUSE: G = G::INSTR_KERNEL_OTHER;
 static mut CAUSE_SYSCALL: usize = 0;
@@ -243,6 +277,8 @@ pub fn gueststat_get(kind: u32, index: u32) -> f64 {
             5 if i < PORT_WRITES.len() => PORT_WRITES[i] as f64,
             6 if i < KHIST.len() => KHIST[i] as f64,
             7 if i < UHIST.len() => UHIST[i] as f64,
+            8 if i < EKEYS.len() => EKEYS[i] as f64,
+            9 if i < ECNT.len() => ECNT[i] as f64,
             _ => -1.0,
         }
     }
@@ -262,6 +298,8 @@ pub fn gueststat_reset() {
         PORT_WRITES.iter_mut().for_each(|x| *x = 0);
         KHIST.iter_mut().for_each(|x| *x = 0);
         UHIST.iter_mut().for_each(|x| *x = 0);
+        EKEYS.iter_mut().for_each(|x| *x = 0);
+        ECNT.iter_mut().for_each(|x| *x = 0);
         TIME_LAST = 0.0;
     }
 }

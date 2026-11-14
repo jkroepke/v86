@@ -1,6 +1,8 @@
 // shared by bench.mjs (Node.js) and web/worker.mjs (browser)
 let O, V86, initramfs, bootKernel, Tree, LayerStorage, modes;
 const MEMORY = 256 << 20;
+// the environment: Node.js, or globalThis.BENCH_ENV in a browser worker
+const ENV = globalThis.process?.env ?? globalThis.BENCH_ENV ?? {};
 const IP = "192.168.86.100", GATEWAY = "192.168.86.1";
 const path = { join: (a, b) => a + "/" + b };
 function options() {
@@ -19,11 +21,12 @@ function jitcfg(e) {
 }
 function lines(e, port, cb) {
   const got = []; let line = "";
-  e.add_listener(`serial${port}-output-byte`, (b) => {
+  const byte = (b) => {
     if (b === 13) return;
     if (b !== 10) { line += String.fromCharCode(b); return; }
     got.push(line); cb?.(line); line = "";
-  });
+  };
+  e.add_listener(`serial${port}-output-byte`, byte);
   return got;
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -75,6 +78,8 @@ function rootfs(img, conf) {
   for (const [p, d] of Object.entries(extra)) { const k = `mem:${mem.size}`; mem.set(k, d); tree.set(p, { uid: 0, gid: 0, mtime: now, mode: modes.S_IFREG | 0o644, size: d.length, key: k }); }
   for (const d of ["dev", "proc", "sys", "tmp"]) if (!tree.files.has(d)) tree.set(d, { uid: 0, gid: 0, mtime: now, mode: modes.S_IFDIR | 0o1777 });
   const layer = { read: async (o, n) => buf.subarray(o, o + n) };
+  // READINTO=1: synchronous reads like the OPFS sync access handles of tabernetes (layers.js)
+  if (ENV.READINTO === "1") layer.readInto = (o, dest) => { dest.set(buf.subarray(o, o + dest.length)); return dest.length; };
   return { json: tree.v86(), storage: new LayerStorage(new Map([["L", layer]]), mem) };
 }
 
@@ -187,13 +192,15 @@ const pct = (a, p) => a.slice().sort((x, y) => x - y)[Math.min(a.length - 1, Mat
 async function pod(state, wl, rec) {
   const [img, c] = confs()[wl];
   const conf = { ...c, user: "", hostname: "bench", ip: IP, gateway: GATEWAY, stdin: false, stdinOnce: false, tty: false };
+  const tc = performance.now();
   const e = new V86(options());
   await new Promise((r) => e.add_listener("emulator-loaded", r));
+  const ctorMs = performance.now() - tc;
   jitcfg(e);
   const tr = performance.now();
   await e.restore_state(state);
   const restoreMs = performance.now() - tr;
-  const r0 = {};
+  const r0 = { ctor: ctorMs };
   const control = lines(e, 1);
   const con = lines(e, 0);
   const f = rootfs(img, conf);
@@ -265,7 +272,7 @@ async function pod(state, wl, rec) {
     // counters of src/rust/gueststat.rs; the arrays as [index, value] pairs
     const g = cpu.wm.exports.gueststat_get;
     const arr = (kind, n) => { const out = []; for (let i = 0; i < n; i++) { const v = g(kind, i); if (v) out.push([i, v]); } return out; };
-    O.gstatOut({ names: O.gstat, counters: O.gstat.map((_, i) => g(0, i)), vectors: arr(1, 256), syscalls: arr(2, 512), syscallInstr: arr(3, 512), portReads: arr(4, 65536), portWrites: arr(5, 65536), khist: arr(6, 1 << 20), uhist: arr(7, 1 << 20), wallMs: r.done, cpuMs: r.cpu });
+    O.gstatOut({ names: O.gstat, counters: O.gstat.map((_, i) => g(0, i)), vectors: arr(1, 256), syscalls: arr(2, 512), syscallInstr: arr(3, 512), portReads: arr(4, 65536), portWrites: arr(5, 65536), khist: arr(6, 1 << 20), uhist: arr(7, 1 << 20), ekeys: arr(8, 1 << 17), ecnt: arr(9, 1 << 17), wallMs: r.done, cpuMs: r.cpu });
   }
   if (rec) rec.out = e.jit_export(O.kjitTop);
   await e.destroy();
@@ -307,6 +314,17 @@ export async function run(o) {
     }
     const t = performance.now();
     O.kjit = await V86.jit_prepare(blob);
+    if (o.kjitWarm) {
+      // like warm() of tabernetes web/src/jit.js: V8 tiers the modules up before the first pod
+      const t = performance.now(), memory = new WebAssembly.Memory({ initial: 512 });
+      const stop = () => { throw new Error("stop"); };
+      const e = new Proxy({}, { get: (_, k) => (k === "m" ? memory : stop) });
+      for (const m of O.kjit.modules) {
+        try { const f = new WebAssembly.Instance(m.module, { e }).exports.f; for (let i = 0; i < o.kjitWarm; i++) f(0); } catch {}
+      }
+      log(`kjit: warmed with ${o.kjitWarm} calls each in ${(performance.now() - t).toFixed(0)} ms`);
+      await sleep(Number(ENV.KJIT_WARM_WAIT ?? 1000)); // TurboFan runs on other threads
+    }
     log(`kjit: ${O.kjit.modules.length} kernel modules, ${(blob.byteLength / 1024).toFixed(0)} KiB, prepared in ${(performance.now() - t).toFixed(0)} ms`);
   }
   if (o.prewarm) {
@@ -332,7 +350,7 @@ export async function run(o) {
       log(`${o.workload} steady ${i}: ${s.n} requests after ${O.warm ?? 20}, up ${r.up.toFixed(0)} ms: ${s.ms.toFixed(2)} ms/req (${s.rps.toFixed(1)}/s), cpu ${s.cpu.toFixed(2)} ms/req${o.pcpu ? `, process cpu ${s.pcpu.toFixed(2)} ms/req` : ""}, ${s.minstr.toFixed(3)}M instr/req, latency p50 ${s.p50.toFixed(2)} p90 ${s.p90.toFixed(2)} p99 ${s.p99.toFixed(2)} max ${s.max.toFixed(2)} ms`);
       continue;
     }
-    log(`${o.workload} round ${i}: restore ${r.restore.toFixed(0)} ms, started ${r.started.toFixed(0)} ms, done ${r.done.toFixed(0)} ms, cpu ${r.cpu.toFixed(0)} ms${r.imported !== undefined ? `, imported ${r.imported} in ${r.importMs.toFixed(1)} ms` : ""}${o.pcpu ? `, process cpu ${r.pcpu.toFixed(0)} ms` : ""}, ${r.minstr.toFixed(1)}M instr, ${(r.minstr / r.done * 1000).toFixed(1)}M instr/s${O.idleMs ? `, idle: cpu ${r.idleCpu.toFixed(1)} ms/s, ${(r.idleInstr / 1000).toFixed(0)}k instr/s` : ""}${r.up ? `, up ${r.up.toFixed(0)} ms, scrape ${r.scrape.toFixed(1)} ms` : ""}`);
+    log(`${o.workload} round ${i}: ctor ${r.ctor.toFixed(0)} ms, restore ${r.restore.toFixed(0)} ms, started ${r.started.toFixed(0)} ms, done ${r.done.toFixed(0)} ms, cpu ${r.cpu.toFixed(0)} ms${r.imported !== undefined ? `, imported ${r.imported} in ${r.importMs.toFixed(1)} ms` : ""}${o.pcpu ? `, process cpu ${r.pcpu.toFixed(0)} ms` : ""}, ${r.minstr.toFixed(1)}M instr, ${(r.minstr / r.done * 1000).toFixed(1)}M instr/s${O.idleMs ? `, idle: cpu ${r.idleCpu.toFixed(1)} ms/s, ${(r.idleInstr / 1000).toFixed(0)}k instr/s` : ""}${r.up ? `, up ${r.up.toFixed(0)} ms, scrape ${r.scrape.toFixed(1)} ms` : ""}`);
   }
   const med = (a) => a.slice().sort((x, y) => x - y)[a.length >> 1];
   if (res.length && res[0].ss) {
