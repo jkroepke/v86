@@ -440,6 +440,18 @@ connection per request over the network adapter of v86, release build of 60e7e76
     2.93 -> 2.91 ms per request (5 runs of 2000). The micro benchmark above jumps to a new
     module at every call; real code stays in a few modules for a while, and then the call
     costs the same in one module or in many.
+  - spring in the steady state, where the time goes (2026-11-14, the Spring Boot example of
+    tabernetes, Node.js, after 2000 requests, 6.5 ms and 0.55M instructions per request).
+    Counters of a profiler build per request: 45k module entries of ~12 instructions and 8k
+    interpreted blocks of ~14; 97 % of the entries end with a jump to another page: 56 %
+    are returns and other indirect jumps (`INDIRECT_JUMP_NO_ENTRY`), 44 % direct calls and
+    jumps. V8 CPU profile of the main thread: JIT code 37 % (for ~82 % of the
+    instructions), the interpreter and its helpers 32 % (for ~17 %), main_loop 16 % (the
+    profile shows it as `js-to-wasm::d`), the devices in JS 7 %. So a run of JIT code
+    costs ~70 ns and an interpreted block ~330 ns. 3 or 8 pages per module
+    (`set_jit_config(1, n)`), so that calls and returns stay in a module: 6.6-6.7 and
+    6.4-6.9 ms against 6.5-7.2 ms (2 alternating runs each, noise), process CPU +5 % and
+    +25 %. Not kept.
 
 ## Instruction set extensions: what pays (measured 2026-11-13)
 
