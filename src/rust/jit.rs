@@ -2901,3 +2901,118 @@ pub unsafe fn get_jit_config(index: u32) -> u32 {
         _ => 0,
     }
 }
+
+// Modules of another instance of the same v86.wasm, for a guest with the same code at the same
+// physical pages: the kernel of a pod is the same in every pod that restores the same state.
+// The embedder exports the modules of one run (jit_export_*, the bytes come from
+// codegen_finalize), compiles them once and installs them in later instances (jit_import_*)
+// before the guest runs. The code of a module has its table index and the addresses of the
+// statics of v86.wasm in it: jit_layout_id tells builds with another layout apart, and the
+// embedder must check that the pages have the same bytes.
+#[no_mangle]
+pub fn jit_layout_id() -> u32 {
+    let mut h: u32 = 0x811c_9dc5;
+    for v in [
+        &raw const cpu::tlb_code as u32,
+        &raw const cpu::tlb_data as u32,
+        &raw const cpu::valid_tlb_entries as u32,
+        &raw const PAGE_HOTNESS as u32,
+        &raw const MARKS as u32,
+        cpu::CODE_KEY_OFFSET,
+        WASM_TABLE_SIZE,
+        cpu::WASM_TABLE_OFFSET,
+        cpu::LOOP_COUNTER as u32,
+        std::mem::size_of::<cpu::Code>() as u32,
+    ] {
+        for b in v.to_le_bytes() {
+            h = (h ^ b as u32).wrapping_mul(0x0100_0193);
+        }
+    }
+    h
+}
+
+static mut EXPORT_LIST: Vec<u32> = Vec::new();
+
+// Collects the pages with a module (cpl 0 code only when kernel_only); returns the count
+#[no_mangle]
+#[allow(static_mut_refs)]
+pub fn jit_export_collect(kernel_only: bool) -> u32 {
+    let ctx = get_jit_state();
+    unsafe {
+        EXPORT_LIST.clear();
+        for (page, info) in ctx.pages.iter() {
+            if kernel_only && info.state_flags.cpl3() {
+                continue;
+            }
+            EXPORT_LIST.push(page.to_u32());
+        }
+        EXPORT_LIST.len() as u32
+    }
+}
+// what: 0 page, 1 table index, 2 state flags, 3 number of entry points, 4 + 2k / 5 + 2k entry k
+#[no_mangle]
+#[allow(static_mut_refs)]
+pub fn jit_export_get(i: u32, what: u32) -> u32 {
+    let ctx = get_jit_state();
+    let page = unsafe { EXPORT_LIST[i as usize] };
+    let info = ctx.pages.get(&Page::of_u32(page)).unwrap();
+    match what {
+        0 => page,
+        1 => info.wasm_table_index.to_u16() as u32,
+        2 => info.state_flags.to_u32(),
+        3 => info.entry_points.len() as u32,
+        n => {
+            let (a, s) = info.entry_points[((n - 4) / 2) as usize];
+            if n & 1 == 0 { a as u32 } else { s as u32 }
+        },
+    }
+}
+
+static mut IMPORT_ENTRIES: Vec<(u16, u16)> = Vec::new();
+#[no_mangle]
+#[allow(static_mut_refs)]
+pub fn jit_import_entry(addr: u32, state: u32) {
+    unsafe { IMPORT_ENTRIES.push((addr as u16, state as u16)) }
+}
+// Installs the entry points pushed before; returns false when the table index or the page is
+// taken (then the embedder must not set the table entry)
+#[no_mangle]
+#[allow(static_mut_refs)]
+pub fn jit_import_page(page: u32, wasm_table_index: u32, state_flags: u32) -> bool {
+    let mut ctx = get_jit_state();
+    let entries = unsafe { std::mem::take(&mut IMPORT_ENTRIES) };
+    let page = Page::of_u32(page);
+    let index = WasmTableIndex(wasm_table_index as u16);
+    if ctx.pages.contains_key(&page) || ctx.compiling.is_some() {
+        return false;
+    }
+    let pos = match ctx.wasm_table_index_free_list.iter().position(|&w| w == index) {
+        Some(p) => p,
+        None => return false,
+    };
+    ctx.wasm_table_index_free_list.swap_remove(pos);
+    let set = ctx.entry_points.entry(page).or_insert_with(|| HashSet::default());
+    for &(a, _) in &entries {
+        set.insert(a);
+    }
+    ctx.pages.insert(page, PageInfo {
+        wasm_table_index: index,
+        hidden_wasm_table_indices: Vec::new(),
+        entry_points: entries,
+        state_flags: CachedStateFlags::of_u32(state_flags),
+    });
+    cpu::tlb_set_has_code(page, true);
+    for i in 0..unsafe { cpu::valid_tlb_entries_count } {
+        let p = unsafe { cpu::valid_tlb_entries[i as usize] };
+        let entry = unsafe { cpu::tlb_data[p as usize] };
+        if 0 != entry {
+            let tlb_physical_page = Page::of_u32(
+                (entry as u32 >> 12 ^ p as u32) - (unsafe { memory::mem8 } as u32 >> 12),
+            );
+            if tlb_physical_page == page {
+                update_tlb_code_ctx(&ctx, Page::of_u32(p as u32), page);
+            }
+        }
+    }
+    true
+}
