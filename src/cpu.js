@@ -68,6 +68,9 @@ export function CPU(bus, wm, stop_idling)
     this.wm = wm;
     this.wasm_patch();
     this.create_jit_imports();
+    this.jit_gen = new Uint32Array(WASM_TABLE_SIZE);
+    this.jit_unpacked = new Map();
+    this.jit_pack_size = +globalThis["V86_PACK"] || 0;
 
     const memory = this.wm.exports.memory;
 
@@ -473,6 +476,8 @@ CPU.prototype.jit_clear_func = function(index)
 {
     dbg_assert(index >= 0 && index < WASM_TABLE_SIZE);
     this.wm.wasm_table.set(index + WASM_TABLE_OFFSET, null);
+    this.jit_gen[index]++;
+    this.jit_unpacked.delete(index);
 };
 
 CPU.prototype.jit_clear_all_funcs = function()
@@ -482,7 +487,9 @@ CPU.prototype.jit_clear_all_funcs = function()
     for(let i = 0; i < WASM_TABLE_SIZE; i++)
     {
         table.set(WASM_TABLE_OFFSET + i, null);
+        this.jit_gen[i]++;
     }
+    this.jit_unpacked.clear();
 };
 
 CPU.prototype.get_state = function()
@@ -1820,7 +1827,7 @@ CPU.prototype.load_bios = function()
 // module; jit_export packs the modules that are in use; jit_prepare (starter.js) compiles a
 // packed list once; jit_import installs it in a new instance. See jit_layout_id in jit.rs.
 const JIT_EXPORT_MAGIC = 0x4a363876; // "v86J"
-const JIT_EXPORT_VERSION = 1;
+const JIT_EXPORT_VERSION = 2;
 
 // two 32-bit hashes of a page of guest memory
 export function jit_page_hash(mem8, page)
@@ -1887,6 +1894,84 @@ CPU.prototype.jit_export = function(kernel_only, limit)
 };
 
 /**
+ * One module with the functions of several modules of the JIT: its exports are f0, f1, ...
+ * The modules of one instance of v86.wasm have the same types and the same index for every
+ * import (IMPORTS in wasm_builder.rs), so their function bodies fit together unchanged.
+ * V8 gives every module its own code space, and a call into another module costs more the more
+ * modules there are.
+ * @param {!Array<!Uint8Array>} list
+ * @return {!Uint8Array}
+ */
+export function jit_merge(list)
+{
+    const leb = n => { const o = []; do { let b = n & 127; n >>>= 7; if(n) b |= 128; o.push(b); } while(n); return o; };
+    let head = null, head_len = 0, size = 0;
+    const bodies = [];
+    for(const m of list)
+    {
+        let off = 8, imports_end = 0;
+        while(off < m.length)
+        {
+            const id = m[off++];
+            let len = 0, shift = 0, b;
+            do { b = m[off++]; len |= (b & 127) << shift; shift += 7; } while(b & 128);
+            if(id === 2) imports_end = off + len;
+            if(id === 10)
+            {
+                // one function: skip the count
+                bodies.push(m.subarray(off + 1, off + len));
+                size += len - 1;
+            }
+            off += len;
+        }
+        // the module with the most imports has the imports of all
+        if(imports_end > head_len) { head = m; head_len = imports_end; }
+    }
+    // After the imports of a module come its function section (4 bytes) and its export:
+    // the type of the function, and its index, which is the number of imported functions
+    // (2 bytes).
+    const type = head[head_len + 3];
+    const first = (head[head_len + 10] & 127) | head[head_len + 11] << 7;
+    const n = leb(list.length);
+    const funcs = [...n];
+    const exports = [...n];
+    for(let i = 0; i < list.length; i++)
+    {
+        funcs.push(type);
+        const name = "f" + i;
+        exports.push(name.length);
+        for(let j = 0; j < name.length; j++) exports.push(name.charCodeAt(j));
+        exports.push(0, ...leb(first + i));
+    }
+    const code_len = leb(n.length + size);
+    const mid = [3, ...leb(funcs.length), ...funcs, 7, ...leb(exports.length), ...exports, 10, ...code_len, ...n];
+    const out = new Uint8Array(head_len + mid.length + size);
+    out.set(head.subarray(0, head_len));
+    out.set(mid, head_len);
+    let off = head_len + mid.length;
+    for(const b of bodies) { out.set(b, off); off += b.length; }
+    return out;
+}
+
+// Modules that codegen_finalize compiled one by one are compiled again as one module (jit_merge)
+// once there are jit_pack_size of them; 0: never.
+CPU.prototype.jit_pack = function()
+{
+    const entries = [...this.jit_unpacked];
+    this.jit_unpacked.clear();
+    const gens = entries.map(([index]) => this.jit_gen[index]);
+    WebAssembly.instantiate(jit_merge(entries.map(e => e[1])), { "e": this.jit_imports }).then(result => {
+        const ex = result.instance.exports;
+        for(let i = 0; i < entries.length; i++)
+        {
+            const index = entries[i][0];
+            // not a module that was dropped or replaced meanwhile
+            if(this.jit_gen[index] === gens[i]) this.wm.wasm_table.set(index + WASM_TABLE_OFFSET, ex["f" + i]);
+        }
+    });
+};
+
+/**
  * Parses an export and compiles its modules (once, for any number of instances)
  * @param {ArrayBuffer} buffer
  * @return {Promise<Object>}
@@ -1910,12 +1995,21 @@ export async function jit_prepare(buffer)
         off += len + 3 & ~3;
         list.push({
             "page": h[0], "index": h[1], "flags": h[2], "hash": [h[3], h[4]], "entries": entries,
-            "module": WebAssembly.compile(bytes),
+            "bytes": bytes,
         });
     }
-    for(const m of list) m["module"] = await m["module"];
-    jit_compile_now(list);
-    return { "layout": head[2], "modules": list };
+    // all functions in modules of jit_kpack functions each (default: one module for all)
+    const per = +globalThis["V86_KPACK"] || list.length || 1;
+    const modules = [];
+    for(let i = 0; i < list.length; i += per)
+    {
+        const part = list.slice(i, i + per);
+        modules.push(WebAssembly.compile(jit_merge(part.map(m => m["bytes"]))));
+        part.forEach((m, j) => { m["module"] = modules.length - 1; m["name"] = "f" + j; delete m["bytes"]; });
+    }
+    for(let i = 0; i < modules.length; i++) modules[i] = await modules[i];
+    jit_compile_now(modules, list);
+    return { "layout": head[2], "modules": list, "wasm": modules };
 }
 
 // V8 compiles the function of a module at its first call, which would be on the thread of the
@@ -1923,16 +2017,17 @@ export async function jit_prepare(buffer)
 // with a scratch memory whose imports throw: it stops at its first access outside the scratch
 // memory, its first import or its loop limit (JIT_USE_LOOP_SAFETY). The compiled code stays
 // with the Module.
-function jit_compile_now(list)
+function jit_compile_now(modules, list)
 {
     const memory = new WebAssembly.Memory({ "initial": 64 });
     const stop = () => { throw new Error("stop"); };
     const imports = new Proxy({}, { get: (_, k) => k === "m" ? memory : stop });
+    const instances = modules.map(m => new WebAssembly.Instance(m, { "e": imports }).exports);
     for(const m of list)
     {
         try
         {
-            new WebAssembly.Instance(m["module"], { "e": imports }).exports["f"](0);
+            instances[m["module"]][m["name"]](0);
         }
         catch(e)
         {
@@ -1954,25 +2049,27 @@ CPU.prototype.jit_import = function(prepared)
         return 0;
     }
     let n = 0;
+    let instances;
+    try
+    {
+        instances = prepared["wasm"].map(m => new WebAssembly.Instance(m, { "e": this.jit_imports }).exports);
+    }
+    catch(e)
+    {
+        return 0;
+    }
     for(const m of prepared["modules"])
     {
         const page = m["page"];
         if((page + 1) << 12 > this.mem8.length || (page + 1) << 12 <= 0) continue;
         const [h1, h2] = jit_page_hash(this.mem8, page);
         if(h1 !== m["hash"][0] || h2 !== m["hash"][1]) continue;
-        let f;
-        try
-        {
-            f = new WebAssembly.Instance(m["module"], { "e": this.jit_imports }).exports["f"];
-        }
-        catch(e)
-        {
-            continue;
-        }
+        const f = instances[m["module"]][m["name"]];
         const entries = m["entries"];
         for(let j = 0; j < entries.length; j++) ex["jit_import_entry"](entries[j] & 0xFFFF, entries[j] >>> 16);
         if(!ex["jit_import_page"](page, m["index"], m["flags"])) continue;
         this.wm.wasm_table.set(m["index"] + WASM_TABLE_OFFSET, f);
+        this.jit_gen[m["index"]]++;
         n++;
     }
     return n;
@@ -2050,11 +2147,19 @@ CPU.prototype.codegen_finalize = function(wasm_table_index, start, state_flags, 
         return;
     }
 
+    const gen = ++this.jit_gen[wasm_table_index];
+    const copy = this.jit_pack_size ? code.slice() : null;
     const result = WebAssembly.instantiate(code, { "e": this.jit_imports }).then(result => {
         const f = result.instance.exports["f"];
 
         this.wm.wasm_table.set(wasm_table_index + WASM_TABLE_OFFSET, f);
         this.codegen_finalize_finished(wasm_table_index, start, state_flags);
+
+        if(copy && this.jit_gen[wasm_table_index] === gen)
+        {
+            this.jit_unpacked.set(wasm_table_index, copy);
+            if(this.jit_unpacked.size >= this.jit_pack_size) this.jit_pack();
+        }
 
         if(this.test_hook_did_finalize_wasm)
         {

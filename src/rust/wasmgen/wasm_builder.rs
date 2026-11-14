@@ -70,6 +70,9 @@ impl FunctionType {
 
 pub const WASM_MODULE_ARGUMENT_COUNT: u8 = 1;
 
+// The imports that modules have used so far, in the order of their index.
+static mut IMPORTS: Vec<(String, u8)> = Vec::new();
+
 pub struct WasmBuilder {
     output: Vec<u8>,
     instruction_body: Vec<u8>,
@@ -179,6 +182,7 @@ impl WasmBuilder {
         dbg_assert!(self.label_to_depth.is_empty());
         dbg_assert!(self.label_stack.is_empty());
 
+        self.write_imports();
         self.write_memory_import();
         self.write_function_section();
         self.write_export_section();
@@ -541,12 +545,23 @@ impl WasmBuilder {
     }
 
     fn get_fn_idx(&mut self, fn_name: &str, type_index: FunctionType) -> u16 {
-        match self.get_import_index(fn_name) {
-            Some(idx) => idx,
+        // The index of an import is the same in every module of this instance (IMPORTS), so
+        // the function bodies of several modules fit into one module (jit_pack in cpu.js).
+        let imports = unsafe { &mut *std::ptr::addr_of_mut!(IMPORTS) };
+        match imports.iter().position(|(name, _)| *name == fn_name) {
+            Some(idx) => idx as u16,
             None => {
-                let idx = self.write_import_entry(fn_name, type_index);
-                idx
+                imports.push((fn_name.to_string(), type_index.to_u8()));
+                (imports.len() - 1) as u16
             },
+        }
+    }
+
+    fn write_imports(&mut self) {
+        dbg_assert!(self.import_count == 0);
+        let imports = unsafe { &*std::ptr::addr_of!(IMPORTS) };
+        for (name, type_index) in imports {
+            self.write_import_entry(name, FunctionType::of_u8(*type_index));
         }
     }
 

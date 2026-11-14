@@ -76,6 +76,10 @@ if (process.env.GSTAT) {
   gstat = src.match(/pub enum G \{([\s\S]*?)\}/)[1].split("\n").map((l) => l.trim().replace(/,$/, "")).filter((l) => l && !l.startsWith("//") && l !== "COUNT");
   gstatOut = (g) => fs.writeFileSync(process.env.GSTAT, JSON.stringify(g));
 }
+// PACK=n: modules of the JIT are compiled again as one module per n (V86_PACK of cpu.js);
+// KPACK=n: the kernel modules of KJIT in modules of n functions (default: one module)
+if (process.env.PACK) globalThis.V86_PACK = Number(process.env.PACK);
+if (process.env.KPACK) globalThis.V86_KPACK = Number(process.env.KPACK);
 const springJSON = path.join(DATA, "spring.json");
 await run({
   spring: fs.existsSync(springJSON) ? JSON.parse(fs.readFileSync(springJSON)) : null,
