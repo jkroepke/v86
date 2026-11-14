@@ -3,6 +3,7 @@
 use crate::config;
 use crate::cpu::fpu::fpu_set_tag_word;
 use crate::cpu::global_pointers::*;
+use crate::cpu::dic;
 use crate::cpu::memory;
 use crate::cpu::misc_instr::{
     adjust_stack_reg, get_stack_pointer, getaf, getcf, getof, getpf, getsf, getzf, pop16, pop32s,
@@ -3352,16 +3353,35 @@ pub struct InterpreterLoop {
     // bit 8 of the opcodes of the block: the operand size. It changes only at the end of a block
     // (far jumps, iret, ...), so the loop does not load is_32 for every instruction. A prefix
     // runs its instruction in a nested call with its own bit.
-    size_bit: u32,
+    pub size_bit: u32,
+    // the decoded instruction cache (dic.rs): the tag of the entries of the page of the block
+    // (u64::MAX: none match), whether entries can be made, where the page is in the table,
+    // and the entry of the instruction that runs
+    pub dic_tag: u64,
+    pub dic_fill: bool,
+    pub dic_base: usize,
+    pub dic_entry: *mut dic::Entry,
 }
 
+// opcode: dic::OP_BLOCK at the start of a block (eip is at the first instruction), or the
+// opcode of a single instruction after a prefix (the caller has read it)
 #[inline(always)]
-pub unsafe fn interpreter_loop_start(opcode: u32) -> InterpreterLoop {
-    // the caller has read the opcode
-    InterpreterLoop {
+pub unsafe fn interpreter_loop_start(opcode: &mut u32) -> InterpreterLoop {
+    let mut state = InterpreterLoop {
         count: 0,
-        size_bit: opcode & 0x100,
+        size_bit: *opcode & 0x100,
+        dic_tag: u64::MAX,
+        dic_fill: false,
+        dic_base: 0,
+        dic_entry: ptr::null_mut(),
+    };
+    if *opcode == dic::OP_BLOCK {
+        state.size_bit = (*is_32 as u32) << 8;
+        dic::block_start(&mut state);
+        let eip = *instruction_pointer;
+        *opcode = dic::lookup(&mut state, eip, (*eip_phys ^ eip) as u32);
     }
+    state
 }
 
 // Called after every instruction of the interpreter: returns the opcode of the next instruction,
@@ -3398,9 +3418,8 @@ pub unsafe fn interpreter_loop_next(state: &mut InterpreterLoop) -> Option<u32> 
     }
 
     record_opstat_interpreted(phys_addr);
-    *instruction_pointer = eip + 1;
     dbg_assert!(state.size_bit == (*is_32 as u32) << 8);
-    Some(*memory::mem8.offset(phys_addr as isize) as u32 | state.size_bit)
+    Some(dic::lookup(state, eip, phys_addr))
 }
 
 // profiler build: count the opcode of an instruction that the interpreter is about to run
@@ -3624,11 +3643,9 @@ unsafe fn jit_run_interpreted(phys_addr: u32) {
     dbg_assert!(interpreter_page == *instruction_pointer & !0xFFF);
     jit::marks_set_current(*instruction_pointer, phys_addr);
     record_opstat_interpreted(phys_addr);
-    let opcode = *memory::mem8.offset(phys_addr as isize) as u32;
-    *instruction_pointer += 1;
     dbg_assert!(*prefixes == 0);
     // the loop over the instructions of the block is in the generated function
-    let count = gen::interpreter::run(opcode | (*is_32 as u32) << 8);
+    let count = gen::interpreter::run(dic::OP_BLOCK);
     dbg_assert!(*prefixes == 0);
 
     if cfg!(debug_assertions) {

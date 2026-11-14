@@ -32,6 +32,57 @@ assert(
 // for a single instruction and returns
 let exit_instruction = "return";
 
+// The cached arms of the main table run an instruction from the decoded instruction cache
+// (src/rust/cpu/dic.rs): the modrm byte, the address and the immediate value come from the
+// decoded entry instead of the code bytes. Only instructions without prefixes are cached.
+let cached_mode = false;
+// The decoder of dic.rs needs to know the operands of each cached instruction: one byte per
+// map (0: one byte opcodes, 1: 0F), operand size, opcode and reg field of the modrm byte
+// (bit 0: cached, bit 1: modrm byte, bits 2-4: immediate 1 imm8, 2 imm8s, 3 imm16, 4 imm32)
+const dic_desc = new Uint8Array(2 * 2 * 256 * 8);
+let dic_cur = null; // { map, size, opcode } while the cached arm of an opcode is generated
+const DIC_IMM_NONE = 0;
+const DIC_IMM = { imm8: 1, imm8s: 2, imm16: 3, imm32: 4 };
+
+function dic_set_desc(g, desc)
+{
+    const sizes = dic_cur.size === undefined ? [0, 1] : [dic_cur.size === 32 ? 1 : 0];
+    const gs = g === undefined ? [0, 1, 2, 3, 4, 5, 6, 7] : [g];
+    for(const size of sizes)
+        for(const g of gs)
+            dic_desc[dic_cur.map << 12 | size << 11 | dic_cur.opcode << 3 | g] = desc;
+}
+
+// The descriptor of an encoding in the cached table, or 0 when it is not cached
+function dic_encoding_desc(encoding, size)
+{
+    if(encoding.prefix || encoding.immaddr || encoding.extra_imm8 || encoding.extra_imm16 ||
+        encoding.custom_sti || encoding.ignore_mod)
+    {
+        return 0;
+    }
+    if(encoding.custom_modrm_resolve && (encoding.opcode & 0xFF) !== 0x8D)
+    {
+        return 0;
+    }
+    let desc = 1;
+    if(encoding.e) desc |= 2;
+    const imm = dic_imm_kind(encoding, size);
+    if(imm === undefined) return 0;
+    return desc | (imm === null ? DIC_IMM_NONE : DIC_IMM[imm]) << 2;
+}
+
+function dic_imm_kind(encoding, size_variant)
+{
+    const size = (encoding.os || encoding.opcode % 2 === 1) ? size_variant : 8;
+    if(encoding.imm8) return "imm8";
+    if(encoding.imm8s) return "imm8s";
+    if(encoding.imm16 || encoding.imm1632 && size === 16) return "imm16";
+    if(encoding.imm32 || encoding.imm1632 && size === 32) return "imm32";
+    if(encoding.imm1632) return undefined;
+    return null;
+}
+
 gen_table();
 
 function wrap_imm_call(imm)
@@ -41,6 +92,10 @@ function wrap_imm_call(imm)
 
 function gen_read_imm_call(op, size_variant)
 {
+    if(cached_mode)
+    {
+        return dic_imm_kind(op, size_variant) ? "dic_imm(&state)" : undefined;
+    }
     let size = (op.os || op.opcode % 2 === 1) ? size_variant : 8;
 
     if(op.imm8 || op.imm8s || op.imm16 || op.imm1632 || op.imm32 || op.immaddr)
@@ -138,7 +193,18 @@ function gen_instruction_body(encodings, size)
 
     if(encoding.e)
     {
-        code.push(`let modrm_byte = ${wrap_imm_call("read_modrm_byte()")};`);
+        code.push(cached_mode ?
+            "let modrm_byte = dic_modrm(&state);" :
+            `let modrm_byte = ${wrap_imm_call("read_modrm_byte()")};`);
+    }
+
+    if(cached_mode)
+    {
+        // a cached instruction has no prefix
+        if(!no_prefix.length) return null;
+        const body = gen_instruction_body_after_prefix(no_prefix, size);
+        if(!body) return null;
+        return [].concat(code, body);
     }
 
     if(has_66.length || has_f2.length || has_f3.length)
@@ -209,7 +275,17 @@ function gen_instruction_body_after_prefix(encodings, size)
                 condition: "modrm_byte >> 3 & 7",
                 cases: cases.map(case_ => {
                     const fixed_g = case_.fixed_g;
-                    const body = gen_instruction_body_after_fixed_g(case_, size);
+                    let body;
+                    if(cached_mode)
+                    {
+                        const desc = dic_encoding_desc(case_, size);
+                        dic_set_desc(fixed_g, desc);
+                        body = desc ? gen_instruction_body_after_fixed_g(case_, size) : ["dbg_assert!(false);"];
+                    }
+                    else
+                    {
+                        body = gen_instruction_body_after_fixed_g(case_, size);
+                    }
 
                     return {
                         conditions: [fixed_g],
@@ -229,6 +305,12 @@ function gen_instruction_body_after_prefix(encodings, size)
     }
     else {
         assert(encodings.length === 1);
+        if(cached_mode)
+        {
+            const desc = dic_encoding_desc(encodings[0], size);
+            dic_set_desc(undefined, desc);
+            if(!desc) return null;
+        }
         return gen_instruction_body_after_fixed_g(encodings[0], size);
     }
 }
@@ -281,7 +363,30 @@ function gen_instruction_body_after_fixed_g(encoding, size)
         {
             let mem_args;
 
-            if(encoding.custom_modrm_resolve)
+            if(cached_mode && encoding.custom_modrm_resolve)
+            {
+                // lea: the address without the segment
+                assert((encoding.opcode & 0xFF) === 0x8D && encoding.fixed_g === undefined && !imm_read);
+                return [].concat(
+                    instruction_prefix,
+                    {
+                        type: "if-else",
+                        if_blocks: [{
+                            condition: "modrm_byte < 0xC0",
+                            body: [`write_reg${size}(modrm_byte >> 3 & 7, dic_ea(&state));`],
+                        }],
+                        else_block: {
+                            body: [gen_call(`${instruction_name}_reg`, ["modrm_byte & 7", "modrm_byte >> 3 & 7"])],
+                        },
+                    },
+                    instruction_postfix
+                );
+            }
+            else if(cached_mode)
+            {
+                mem_args = [`match dic_resolve(&state) { Ok(a) => a, Err(()) => ${exit_instruction} }`];
+            }
+            else if(encoding.custom_modrm_resolve)
             {
                 // requires special handling around modrm_resolve
                 mem_args = ["modrm_byte"];
@@ -406,6 +511,35 @@ function gen_table()
             });
         }
     }
+    // the cached arms: 0x200 | size << 8 | opcode for one byte opcodes, 0x400 | ... for 0F
+    cached_mode = true;
+    for(const [map, by] of [[0, by_opcode], [1, by_opcode0f]])
+    {
+        for(let opcode = 0; opcode < 0x100; opcode++)
+        {
+            const encoding = by[opcode];
+            const base = 0x200 << map;
+            const variants = encoding[0].os ? [[16, [opcode]], [32, [opcode | 0x100]]] : [[undefined, [opcode, opcode | 0x100]]];
+            for(const [size, ops] of variants)
+            {
+                dic_cur = { map, size, opcode };
+                if(map === 0 && opcode === 0x0F) continue;
+                const body = gen_instruction_body(encoding, size);
+                if(!body) continue;
+                cases.push({
+                    conditions: ops.map(o => "0x" + hex(base | o, 3)),
+                    body,
+                });
+            }
+        }
+    }
+    cached_mode = false;
+    dic_cur = null;
+    cases.push({
+        conditions: ["crate::cpu::dic::OP_MISS"],
+        body: ["opcode = dic_miss(&mut state);", "continue 'instructions;"],
+    });
+
     const table = {
         type: "switch",
         condition: "opcode",
@@ -424,8 +558,11 @@ function gen_table()
             "use crate::cpu::cpu::{read_imm8_inline as read_imm8, read_imm8s_inline as read_imm8s};",
             "use crate::cpu::cpu::{read_imm16_inline as read_imm16, read_imm32s_inline as read_imm32s};",
             "use crate::cpu::cpu::read_moffs;",
-            "use crate::cpu::cpu::{task_switch_test, trigger_ud};",
+            "use crate::cpu::cpu::{task_switch_test, task_switch_test_mmx, trigger_ud};",
+            "use crate::cpu::instructions_0f;",
             "use crate::cpu::cpu::{interpreter_loop_start, interpreter_loop_next};",
+            "use crate::cpu::cpu::{write_reg16, write_reg32};",
+            "use crate::cpu::dic::{dic_ea, dic_imm, dic_miss, dic_modrm, dic_resolve};",
             "use crate::cpu::instructions;",
             "use crate::cpu::global_pointers::{instruction_pointer, prefixes};",
             "use crate::prefix;",
@@ -434,15 +571,18 @@ function gen_table()
             "// the end of the block (see interpreter_loop_next). The loop is in this function, so an",
             "// instruction of the interpreter costs no call and no return. Returns how many",
             "// instructions ran.",
+            "#[allow(unused_variables)]",
             "pub unsafe fn run(mut opcode: u32) -> u32 {",
-            "let mut state = interpreter_loop_start(opcode);",
-            "loop {",
+            "let mut state = interpreter_loop_start(&mut opcode);",
+            "'instructions: loop {",
             "'instruction: {",
             table,
             "}",
             "match interpreter_loop_next(&mut state) { Some(next) => opcode = next, None => return state.count }",
             "}",
             "}",
+            "// the operands of the cached instructions, for the decoder of dic.rs",
+            `pub static DIC_DESC: [u8; ${dic_desc.length}] = [${Array.from(dic_desc).join(",")}];`,
         ];
 
         finalize_table_rust(

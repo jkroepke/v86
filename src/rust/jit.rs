@@ -12,6 +12,7 @@ use crate::codegen;
 use crate::control_flow;
 use crate::control_flow::WasmStructure;
 use crate::cpu::cpu;
+use crate::cpu::dic;
 use crate::cpu::global_pointers;
 use crate::cpu::memory;
 use crate::cpu_context::CpuContext;
@@ -2474,6 +2475,7 @@ pub fn jit_increase_hotness_and_maybe_compile(
         let entry_points = ctx.entry_points.entry(page).or_insert_with(|| {
             cpu::tlb_set_has_code(page, true);
             marks_alloc(page);
+            dic::page_has_entry_points(page);
             profiler::stat_increment(stat::RUN_INTERPRETED_NEW_PAGE);
             HashSet::default()
         });
@@ -2624,6 +2626,7 @@ fn jit_dirty_page_ctx(ctx: &mut JitState, page: Page) {
         None => {},
         Some(entry_points) => {
             marks_free(page);
+            dic::page_dirty(page);
             unsafe {
                 PAGE_HOTNESS[page.to_u32() as usize] = 0;
                 for addr_low in entry_points {

@@ -2,6 +2,7 @@ pub mod apic;
 pub mod arith;
 pub mod call_indirect;
 pub mod cpu;
+pub mod dic;
 pub mod fpu;
 pub mod global_pointers;
 pub mod instructions;
