@@ -407,8 +407,8 @@ connection per request over the network adapter of v86, release build of 60e7e76
   benchmark (one call_indirect site, functions in a random cycle, 3.5 KB of wasm each):
   64 modules 7 ns per call, 256 modules 24-26 ns, 1024 modules 156 ns; the same functions
   in modules of 16 functions: 6, 6-8 and 18 ns (Node.js 22 and Chromium 153 alike). The
-  entries of goapp go to ~220 modules (90 % to 110), of spring to ~820 (90 % to 214). So
-  several pages (one function each) in one wasm module should cut the cost per entry.
+  entries of goapp go to ~220 modules (90 % to 110), of spring to ~820 (90 % to 214). But
+  real entries are not a random cycle: packing the modules did not pay (dead ends below).
 - nginx: sendfile is 46k kernel instructions per request, close 24k, write 20k (the
   access log goes byte by byte to the UART: 84 port writes and 4 interrupts per request).
 - goapp: 15 reads (/proc) of 15k and 3 socket writes of 49k kernel instructions per scrape.
@@ -426,6 +426,20 @@ connection per request over the network adapter of v86, release build of 60e7e76
     CPU, but spring start +4 % main thread and +24 % process CPU. Not kept.
   - Pages per module (`set_jit_config(1, n)`) 3 or 8: goapp and nginx in the steady state
     within the noise.
+  - Several pages (one function each) in one wasm module (2026-11-14, branch
+    `claude/project-thread-byk9dz`, commits "wip: pack JIT modules"). Imports got the same
+    index in every module (a list per instance in `wasm_builder.rs`; every module declares
+    all of them), so `jit_merge` in `cpu.js` could join the function bodies of n modules
+    unchanged. Modules were compiled one by one as before and again as one module once n
+    were there (the table entries are swapped); the kernel modules of `jit_prepare` became
+    one module. Node.js, medians of alternating runs: goapp after 1000 scrapes 11.1-12.5 ms
+    per scrape with and without (n = 16, 32, 64; 208 modules packed), spring after 2000
+    requests 6.5-6.7 ms with and without (n = 16, 64), process CPU +5 % (16) and +12 % (64):
+    V8 optimises the hot functions a second time. The 100 kernel modules as one module:
+    nginx start 544 -> 585 ms main thread (10 x 4 rounds, noise), nginx in the steady state
+    2.93 -> 2.91 ms per request (5 runs of 2000). The micro benchmark above jumps to a new
+    module at every call; real code stays in a few modules for a while, and then the call
+    costs the same in one module or in many.
 
 ## Instruction set extensions: what pays (measured 2026-11-13)
 
