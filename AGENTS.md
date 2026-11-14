@@ -98,6 +98,29 @@ calls, interrupts, port I/O), `IDLE_MS=` what an idle pod costs.
   cpu workload, so the hot loops fit the caches) it was no faster either:
   19.8 / 20.1 s -> 19.4 / 22.8 s. Smaller entries cannot win what the
   hot-loop case does not show.
+- Superblocks in the interpreter do not pay (branch `wip/superblock`,
+  2026-11-14). Direct jumps already go on inside the page: jmp rel, jcc
+  and loop have `no_block_boundary_in_interpreted` (upstream), and the
+  block ends only when eip leaves the page or after
+  `INTERPRETER_ITERATION_LIMIT` with a jump back. What ends the 2.34M
+  interpreted blocks of an nginx start (profiler build, last instruction
+  of the block): ret 935k (819k into another page), call rel 858k (751k
+  into another page), jmp/call through memory 265k, jmp/jcc out of the
+  page ~160k; only ~14 % end with a target in the same page (goapp 14 %,
+  glibc 6 %). The prototype went on after a call rel in the page, and
+  after ret and jmp/call through memory when the target is in the page
+  and the page has no compiled code (the target is recorded as an entry
+  point). Interpreted blocks: nginx 2.34M -> 2.03M, goapp 3.17M -> 2.73M,
+  glibc 13.7M -> 12.9M; the JIT compiled the same (same compiles and
+  bytes; ~1-4 % fewer entry points, the analysis follows call targets).
+  Main-thread CPU, medians of 3 alternating sets (nginx 4-10 x 4 rounds,
+  goapp 4-10 x 3): nginx 565 / 554 / 556 -> 544 / 573 / 557 ms, goapp
+  941 / 993 / 989 -> 951 / 990 / 983 ms; glibc 4049 -> 3957 ms, cpu
+  4007 -> 4060 ms (4 x 2 rounds); process CPU unchanged. That fits the
+  ceiling: 14 % of the blocks times the ~8 % of `main_loop` is ~1 %. Going
+  on into another page would need the same work as a new block (TLB,
+  `tlb_code`, marks, hotness and entry point of the new page), so only the
+  call and return of `cycle_internal` would be saved.
 - Background CPU: V8 compiles every JIT module twice, first with Liftoff,
   then the hot ones with TurboFan on background threads (~40 ms per page
   module). With the threshold of 200k that was 2 s per nginx start and 6.8 s
