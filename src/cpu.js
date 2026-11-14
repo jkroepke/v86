@@ -2030,7 +2030,9 @@ export async function jit_prepare(buffer)
 // with the Module.
 function jit_compile_now(modules, list)
 {
-    const memory = new WebAssembly.Memory({ "initial": 64 });
+    // The modules read static data of v86.wasm up to ~17 MiB; an access beyond the scratch memory
+    // traps, which crashed the renderer of headless Chromium (tabernetes AGENTS.md).
+    const memory = new WebAssembly.Memory({ "initial": 512 });
     const stop = () => { throw new Error("stop"); };
     const imports = new Proxy({}, { get: (_, k) => k === "m" ? memory : stop });
     const instances = modules.map(m => new WebAssembly.Instance(m, { "e": imports }).exports);

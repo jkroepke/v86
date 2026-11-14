@@ -2061,6 +2061,7 @@ pub unsafe fn instr16_E8(imm16: i32) {
 pub unsafe fn instr32_E8(imm32s: i32) {
     // call
     return_on_pagefault!(push32(get_real_eip()));
+    crate::gueststat::edge(*cpl, *previous_ip, *instruction_pointer + imm32s);
     *instruction_pointer = *instruction_pointer + imm32s;
     dbg_assert!(*is_32 || get_real_eip() < 0x10000);
 }
@@ -2070,6 +2071,7 @@ pub unsafe fn instr16_E9(imm16: i32) {
 }
 pub unsafe fn instr32_E9(imm32s: i32) {
     // jmp
+    crate::gueststat::edge(*cpl, *previous_ip, *instruction_pointer + imm32s);
     *instruction_pointer = *instruction_pointer + imm32s;
     dbg_assert!(*is_32 || get_real_eip() < 0x10000);
 }
@@ -2452,6 +2454,7 @@ pub unsafe fn instr32_FF_2_helper(data: i32) {
     let cs = get_seg_cs();
     return_on_pagefault!(push32(get_real_eip()));
     dbg_assert!(*is_32 || data < 0x10000);
+    crate::gueststat::edge(*cpl, *previous_ip, cs + data);
     *instruction_pointer = cs + data;
 }
 pub unsafe fn instr32_FF_2_mem(addr: i32) {
