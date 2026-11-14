@@ -82,6 +82,8 @@ const PATH = "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 const DEFAULT_SCRIPT = "i=0; while [ $i -lt 30000 ]; do i=$((i+1)); done; cat /bin/busybox /bin/busybox /bin/busybox /bin/busybox > /tmp/b; gzip -c /tmp/b > /tmp/b.gz; gunzip -c /tmp/b.gz | sha256sum; sha256sum /tmp/b; echo done";
 // text tools of Debian (glibc i386 uses its SSE2 string functions: memchr, strlen, memcmp, ...)
 const GLIBC_SCRIPT = "find / -xdev -name '*.pm' | xargs cat > /tmp/a; cat /tmp/a /tmp/a /tmp/a /tmp/a > /tmp/b; grep -c sub /tmp/b; grep -ci 'return undef' /tmp/b; sort /tmp/b | uniq | wc -l; tr a-z A-Z < /tmp/b | grep -c SUB; sed 's/my /our /g' /tmp/b | wc -c; awk '{n+=length($0)} END {print n}' /tmp/b; cut -c1-20 /tmp/b | sort -u | wc -l; cmp /tmp/b /tmp/b; sha256sum /tmp/b; sha256sum < /tmp/b; echo done";
+// a shell loop, awk and gzip: the same work again and again, in one shell process
+const LOOP_SCRIPT = "head -c 300000 /bin/busybox > /tmp/b; while :; do i=0; while [ $i -lt 3000 ]; do i=$((i+1)); done; awk 'BEGIN{for(i=0;i<30000;i++)s+=i*i%7; print s}' > /dev/null; gzip -c /tmp/b | gunzip | md5sum > /dev/null; echo tick; done";
 const confs = () => ({
   nginx: ["nginx", { args: ["/docker-entrypoint.sh", "nginx", "-g", "daemon off;"], env: [PATH, "NGINX_VERSION=1"], cwd: "/" }],
   spring: ["spring", O.spring],
@@ -90,7 +92,11 @@ const confs = () => ({
   // a static Go binary (jkroepke/access-log-exporter, GOARCH=386): Go runtime start, then /metrics
   goapp: ["goapp", { args: ["/access-log-exporter", "--config", "/config.yaml", "--syslog.listen-address", "udp://0.0.0.0:8514"], env: [PATH], cwd: "/" }],
   glibc: ["nginx", { args: ["/bin/sh", "-c", O.script || GLIBC_SCRIPT], env: [PATH], cwd: "/" }],
+  // steady state: one process runs on and prints "tick" after each piece of work
+  loop: ["alpine", { args: ["/bin/sh", "-c", O.script || LOOP_SCRIPT], env: [PATH], cwd: "/" }],
 });
+// steady state (STEADY=1): what an application costs per request after its warm-up
+const HTTP = { nginx: [80, "/", "Welcome to nginx"], goapp: [4040, "/metrics", "go_goroutines"], spring: [80, "/", "hello"] };
 
 async function boot() {
   const e = new V86(options());
@@ -123,6 +129,47 @@ function httpGet(e, port = 80, path = "/", body = false) {
   });
 }
 
+// STEADY=1: start the pod, wait until it serves, send WARM requests (or wait for WARM
+// ticks of the loop), then measure REQS more: wall time, CPU time and guest instructions
+// per request, and the latency of each request. PROF and GSTAT cover only that phase.
+async function steady(e, wl, con, r, t0, cpu) {
+  const warm = O.warm ?? 20, n = O.reqs ?? 200;
+  let one;
+  if (wl === "loop") {
+    let seen = 0, scanned = 0;
+    const count = () => { for (; scanned < con.length; scanned++) if (con[scanned] === "tick") seen++; return seen; };
+    await until("tick", () => count() > 0, O.httpTimeout || 1500000);
+    one = async () => { const want = count() + 1; await until("tick", () => count() >= want); };
+  } else {
+    const [port, path, want] = HTTP[wl];
+    for (;;) {
+      const s = await httpGet(e, port);
+      if (s && s.startsWith("HTTP/")) break;
+      if (performance.now() - t0 > (O.httpTimeout || 1500000)) throw new Error("no http");
+      await sleep(wl === "spring" ? 200 : 20);
+    }
+    one = async () => {
+      const m = await httpGet(e, port, path, true);
+      if (!m || !m.includes(want)) throw new Error(`bad answer of ${path}: ` + String(m).slice(0, 200));
+    };
+  }
+  r.up = performance.now() - t0;
+  for (let k = 0; k < warm; k++) await one();
+  await O.hook?.(O.round, "measure");
+  if (O.gstat) cpu.wm.exports.gueststat_reset();
+  const c0 = O.cpu?.() ?? 0, p0 = O.pcpu?.() ?? 0, i0 = cpu.instruction_counter[0], ts = performance.now();
+  const lat = [];
+  for (let k = 0; k < n; k++) { const t = performance.now(); await one(); lat.push(performance.now() - t); }
+  const dt = performance.now() - ts;
+  r.ss = {
+    n, ms: dt / n, rps: n / dt * 1000, cpu: ((O.cpu?.() ?? 0) - c0) / n, pcpu: ((O.pcpu?.() ?? 0) - p0) / n,
+    minstr: ((cpu.instruction_counter[0] - i0) >>> 0) / 1e6 / n,
+    p50: pct(lat, 0.5), p90: pct(lat, 0.9), p99: pct(lat, 0.99), max: Math.max(...lat),
+  };
+  await O.hook?.(O.round, "measured");
+}
+const pct = (a, p) => a.slice().sort((x, y) => x - y)[Math.min(a.length - 1, Math.floor(a.length * p))];
+
 async function pod(state, wl) {
   const [img, c] = confs()[wl];
   const conf = { ...c, user: "", hostname: "bench", ip: IP, gateway: GATEWAY, stdin: false, stdinOnce: false, tty: false };
@@ -147,7 +194,9 @@ async function pod(state, wl) {
   await until("started", () => control.includes("started") || control.some((l) => l.startsWith("exit")));
   const r = { started: performance.now() - t0, restore: restoreMs };
   try {
-    if (wl === "nginx" || wl === "spring" || wl === "goapp") {
+    if (O.steady) {
+      await steady(e, wl, con, r, t0, cpu);
+    } else if (wl === "nginx" || wl === "spring" || wl === "goapp") {
       const port = wl === "goapp" ? 4040 : 80;
       for (;;) {
         const s = await httpGet(e, port);
@@ -209,13 +258,24 @@ export async function run(o) {
     // o.pcpu: CPU time of all threads. V8 compiles wasm on background threads, and a compile
     // that a round started may end in the next one: compare medians of several rounds.
     const p0 = o.pcpu?.() ?? 0;
+    O.round = i;
     const r = await pod(b.state, o.workload);
     r.pcpu = (o.pcpu?.() ?? 0) - p0;
     await o.hook?.(i, "end");
     res.push(r);
+    if (r.ss) {
+      const s = r.ss;
+      log(`${o.workload} steady ${i}: ${s.n} requests after ${O.warm ?? 20}, up ${r.up.toFixed(0)} ms: ${s.ms.toFixed(2)} ms/req (${s.rps.toFixed(1)}/s), cpu ${s.cpu.toFixed(2)} ms/req${o.pcpu ? `, process cpu ${s.pcpu.toFixed(2)} ms/req` : ""}, ${s.minstr.toFixed(3)}M instr/req, latency p50 ${s.p50.toFixed(2)} p90 ${s.p90.toFixed(2)} p99 ${s.p99.toFixed(2)} max ${s.max.toFixed(2)} ms`);
+      continue;
+    }
     log(`${o.workload} round ${i}: restore ${r.restore.toFixed(0)} ms, started ${r.started.toFixed(0)} ms, done ${r.done.toFixed(0)} ms, cpu ${r.cpu.toFixed(0)} ms${o.pcpu ? `, process cpu ${r.pcpu.toFixed(0)} ms` : ""}, ${r.minstr.toFixed(1)}M instr, ${(r.minstr / r.done * 1000).toFixed(1)}M instr/s${O.idleMs ? `, idle: cpu ${r.idleCpu.toFixed(1)} ms/s, ${(r.idleInstr / 1000).toFixed(0)}k instr/s` : ""}${r.up ? `, up ${r.up.toFixed(0)} ms, scrape ${r.scrape.toFixed(1)} ms` : ""}`);
   }
   const med = (a) => a.slice().sort((x, y) => x - y)[a.length >> 1];
+  if (res.length && res[0].ss) {
+    const m = (k) => med(res.map((r) => r.ss[k]));
+    log(`MEDIAN ${o.workload} steady: ${m("ms").toFixed(2)} ms/req, cpu ${m("cpu").toFixed(2)} ms/req${o.pcpu ? `, process cpu ${m("pcpu").toFixed(2)} ms/req` : ""}, ${m("minstr").toFixed(3)}M instr/req, p50 ${m("p50").toFixed(2)} p99 ${m("p99").toFixed(2)} ms`);
+    return res;
+  }
   if (res.length)   log(`MEDIAN ${o.workload}: done ${med(res.map((r) => r.done)).toFixed(0)} ms, cpu ${med(res.map((r) => r.cpu)).toFixed(0)} ms${o.pcpu ? `, process cpu ${med(res.map((r) => r.pcpu)).toFixed(0)} ms` : ""}, started ${med(res.map((r) => r.started)).toFixed(0)} ms, ${med(res.map((r) => r.minstr)).toFixed(1)}M instr, ${med(res.map((r) => r.minstr / r.done * 1000)).toFixed(1)} Mips${res[0].up ? `, up ${med(res.map((r) => r.up)).toFixed(0)} ms, scrape ${med(res.map((r) => r.scrape)).toFixed(1)} ms` : ""}`);
   return res;
 }

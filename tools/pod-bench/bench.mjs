@@ -1,5 +1,5 @@
 // Benchmark of a tabernetes pod in v86 under Node.js. See README.md.
-//   V86=build node tools/pod-bench/bench.mjs <nginx|cpu|spring|glibc> <rounds>
+//   V86=build node tools/pod-bench/bench.mjs <nginx|cpu|spring|glibc|goapp|loop> <rounds>
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,9 +27,11 @@ if (process.env.PROF) {
   ses.connect();
   await ses.post("Profiler.enable");
   await ses.post("Profiler.setSamplingInterval", { interval: 200 });
+  // with STEADY=1 only the measured requests of round PROFROUND (default 0)
+  const steady = process.env.STEADY === "1", pr = Number(process.env.PROFROUND ?? (steady ? 0 : 1));
   hook = async (i, w) => {
-    if (i === Number(process.env.PROFROUND ?? 1) && w === "start") await ses.post("Profiler.start");
-    if (i === Number(rounds) - 1 && w === "end") {
+    if (i === pr && w === (steady ? "measure" : "start")) await ses.post("Profiler.start");
+    if (i === (steady ? pr : Number(rounds) - 1) && w === (steady ? "measured" : "end")) {
       const { profile } = await ses.post("Profiler.stop");
       fs.writeFileSync(process.env.PROF, JSON.stringify(profile));
     }
@@ -67,7 +69,8 @@ if (process.env.GSTAT) {
 const springJSON = path.join(DATA, "spring.json");
 await run({
   spring: fs.existsSync(springJSON) ? JSON.parse(fs.readFileSync(springJSON)) : null,
-  hook, cpu, pcpu, stats, gstat, gstatOut, idleMs: Number(process.env.IDLE_MS || 0), scrapes: process.env.SCRAPES ? Number(process.env.SCRAPES) : undefined, httpTimeout: Number(process.env.HTTP_TIMEOUT || 0), cmdline: process.env.CMDLINE, mods, v86dir: V86DIR, read, workload, rounds: Number(rounds),
+  hook, cpu, pcpu, stats, gstat, gstatOut, idleMs: Number(process.env.IDLE_MS || 0), scrapes: process.env.SCRAPES ? Number(process.env.SCRAPES) : undefined,
+  steady: process.env.STEADY === "1", warm: process.env.WARM ? Number(process.env.WARM) : undefined, reqs: process.env.REQS ? Number(process.env.REQS) : undefined, httpTimeout: Number(process.env.HTTP_TIMEOUT || 0), cmdline: process.env.CMDLINE, mods, v86dir: V86DIR, read, workload, rounds: Number(rounds),
   jitcfg: process.env.JITCFG, cpuhide: process.env.CPUHIDE, script: process.env.SCRIPT,
   v86opts: process.env.V86OPTS && JSON.parse(process.env.V86OPTS), log: console.log,
 });
