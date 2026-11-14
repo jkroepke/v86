@@ -37,6 +37,16 @@ if (process.env.PROF) {
     }
   };
 }
+// PERF_CTL=fifo with STEADY=1: perf record -D -1 --control=fifo:<fifo> records only the
+// measured requests (jitdump: node --perf-prof, then perf inject --jit)
+if (process.env.PERF_CTL && process.env.STEADY === "1") {
+  const prev = hook;
+  hook = async (i, w) => {
+    await prev?.(i, w);
+    if (w === "measure") fs.writeFileSync(process.env.PERF_CTL, "enable\n");
+    if (w === "measured") fs.writeFileSync(process.env.PERF_CTL, "disable\n");
+  };
+}
 // CPU time of the main thread (Linux): less noisy than wall time when other processes run.
 // PCPU=1 adds the CPU time of the whole process: V8 compiles the JIT modules of v86 on
 // background threads, which can be more CPU time than the main thread uses.
@@ -70,7 +80,7 @@ const springJSON = path.join(DATA, "spring.json");
 await run({
   spring: fs.existsSync(springJSON) ? JSON.parse(fs.readFileSync(springJSON)) : null,
   hook, cpu, pcpu, stats, gstat, gstatOut, idleMs: Number(process.env.IDLE_MS || 0), scrapes: process.env.SCRAPES ? Number(process.env.SCRAPES) : undefined,
-  steady: process.env.STEADY === "1", warm: process.env.WARM ? Number(process.env.WARM) : undefined, reqs: process.env.REQS ? Number(process.env.REQS) : undefined, httpTimeout: Number(process.env.HTTP_TIMEOUT || 0), cmdline: process.env.CMDLINE, mods, v86dir: V86DIR, read, workload, rounds: Number(rounds),
+  steady: process.env.STEADY === "1", warm: process.env.WARM ? Number(process.env.WARM) : undefined, reqs: process.env.REQS ? Number(process.env.REQS) : undefined, curve: Number(process.env.CURVE || 0), httpTimeout: Number(process.env.HTTP_TIMEOUT || 0), cmdline: process.env.CMDLINE, mods, v86dir: V86DIR, read, workload, rounds: Number(rounds),
   jitcfg: process.env.JITCFG, kjitThreshold: Number(process.env.KJIT || 0), kjitWorkload: process.env.KJIT_WL, kjitTop: Number(process.env.KJIT_TOP || 0),
   kjitBlob: process.env.KJIT_FILE && fs.existsSync(process.env.KJIT_FILE) ? new Uint8Array(fs.readFileSync(process.env.KJIT_FILE)).buffer : undefined,
   onKjit: process.env.KJIT_FILE ? (b) => fs.writeFileSync(process.env.KJIT_FILE, new Uint8Array(b)) : undefined, cpuhide: process.env.CPUHIDE, script: process.env.SCRIPT,

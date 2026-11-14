@@ -157,9 +157,19 @@ async function steady(e, wl, con, r, t0, cpu) {
     };
   }
   r.up = performance.now() - t0;
-  for (let k = 0; k < warm; k++) await one();
+  // CURVE=n: print the mean time per request of every n warm-up requests
+  let tc = performance.now(), cc = O.cpu?.() ?? 0;
+  for (let k = 0; k < warm; k++) {
+    await one();
+    if (O.curve && (k + 1) % O.curve === 0) {
+      const t = performance.now(), c = O.cpu?.() ?? 0;
+      O.log(`  warm-up ${k + 1}: ${((t - tc) / O.curve).toFixed(2)} ms/req, cpu ${((c - cc) / O.curve).toFixed(2)} ms/req`);
+      tc = t; cc = c;
+    }
+  }
   await O.hook?.(O.round, "measure");
   if (O.gstat) cpu.wm.exports.gueststat_reset();
+  if (O.stats) cpu.wm.exports.profiler_init();
   const c0 = O.cpu?.() ?? 0, p0 = O.pcpu?.() ?? 0, i0 = cpu.instruction_counter[0], ts = performance.now();
   const lat = [];
   for (let k = 0; k < n; k++) { const t = performance.now(); await one(); lat.push(performance.now() - t); }
@@ -229,6 +239,13 @@ async function pod(state, wl, rec) {
   } catch (err) { console.error(control, con.join("\n")); throw err; }
   r.done = performance.now() - t0;
   r.cpu = (O.cpu?.() ?? 0) - c0;
+  if (O.stats && cpu.wm.exports.profiler_module_entries) {
+    // how many modules the entries go to: the working set of JIT code
+    const e = []; for (let i = 0; i < 3000; i++) { const v = cpu.wm.exports.profiler_module_entries(i); if (v) e.push(v); }
+    e.sort((a, b) => b - a); const total = e.reduce((a, b) => a + b, 0);
+    const cover = (f) => { let s = 0; for (let i = 0; i < e.length; i++) { s += e[i]; if (s >= f * total) return i + 1; } return e.length; };
+    O.log(`module entries ${total}: ${e.length} modules entered, 50 % in ${cover(0.5)}, 90 % in ${cover(0.9)}, 99 % in ${cover(0.99)}`);
+  }
   if (O.stats) { const out = []; O.stats.forEach((n, i) => { const v = cpu.wm.exports.profiler_stat_get(i); if (v) out.push(`${n}=${v}`); }); O.log(out.join("\n")); }
   r.minstr = ((cpu.instruction_counter[0] - i0) >>> 0) / 1e6;
   if (O.idleMs) {
