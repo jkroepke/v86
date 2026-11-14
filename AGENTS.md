@@ -79,6 +79,25 @@ calls, interrupts, port I/O), `IDLE_MS=` what an idle pod costs.
   what did not: a displacement without branches in the modrm fast path
   (+2 % host instructions), the modrm fast path as a function without calls
   for flat segments (-0.8 %, +13 KB of wasm).
+- A decoded instruction cache for the interpreter does not pay (branch
+  `wip/interp-cache`, 2026-11-14). Interpreted code is reused a lot (nginx:
+  41M interpreted instructions at 247k addresses, only 1.8 % in their first
+  4 runs), but decoding is not the large cost. perf with jitdump of nginx:
+  the loop head (fetch of the opcode byte, checks, dispatch) is ~22 % of
+  `interpreter::run`, `modrm_resolve_packed` ~11 % and the immediate reads
+  ~2 % of the main thread; the rest is the work of the instructions. The
+  prototype kept a 32-byte entry per physical address of pages with entry
+  points (tag with a generation per page, bumped by `jit_dirty_page`): the
+  opcode of a generated "cached" arm (one byte and 0F opcodes without
+  prefixes), the length, modrm, base/index/scale/segment, displacement and
+  immediate. nginx main-thread CPU, 4 alternating runs: 578-618 ms ->
+  734-787 ms (+28 %). The tag load missed the host caches (23 % of `run`:
+  an entry per byte of code is 32x its footprint; a 512 KB table missed
+  more and was slower still), and the cached arms reloaded the entry
+  pointer from spill slots. With the JIT off in practice (threshold 4G,
+  cpu workload, so the hot loops fit the caches) it was no faster either:
+  19.8 / 20.1 s -> 19.4 / 22.8 s. Smaller entries cannot win what the
+  hot-loop case does not show.
 - Background CPU: V8 compiles every JIT module twice, first with Liftoff,
   then the hot ones with TurboFan on background threads (~40 ms per page
   module). With the threshold of 200k that was 2 s per nginx start and 6.8 s
