@@ -351,6 +351,37 @@ Counters of `src/rust/gueststat.rs` (`GSTAT=` of `tools/pod-bench`), Linux
   a hash of the page) and a VM state saved after the app answered. The
   kernel modules are the part of that idea that every pod shares.
 
+## The first pod of a tab (measured 2026-11-14)
+
+- V8 tiers up the hot functions of v86.wasm (the interpreter is one of
+  them) only after they ran for a while, and an instance that restores a
+  state has run nothing. nginx as the first pod of a new Node.js process
+  from a saved state (`STATE_FILE=` of pod-bench, 5-7 alternating runs):
+  849 ms, 761 ms after a kernel boot in the same process, 695-750 ms after
+  a full nginx start; process CPU of that pod 2.06 / 1.64 / 1.25 s. The
+  start of a tiny shell (2M instructions) gave half of the gain, 16M
+  instructions of a small C program (fork, exec, page faults, pipes, TCP
+  over loopback: `PREWARM=init`, the `warm` command of the init of
+  tabernetes) all of it, 68M no more. tabernetes runs that at the prompt in
+  the worker of its first pod (jkroepke/tabernetes#37): first pod of a
+  return visit in headless Chromium 1313 -> 1040 ms.
+- The JavaScript of v86 is compiled per isolate (every pod is a new
+  worker), but that is no cost: `tools/pod-bench/isolate.mjs` runs each pod
+  in a new worker thread with a shared module, and the first round of a
+  worker was as fast as the second (9 workers: medians 767 and 807 ms).
+- With the code warm at the prompt, tabernetes ships 100 kernel modules
+  instead of 50 (start of a pod to HTTP ~580 -> ~480 ms for later pods).
+  All ~200 with a warm-up of all slowed the image pull of the first pod
+  (TurboFan on the other cores), all with a warm-up of the first 50 or 100
+  slowed the first pod itself (start -> HTTP 578 -> 741-848 ms).
+- The kernel half of an nginx start is flat (GSTAT with System.map, Linux
+  7.3.4 with the patches of tabernetes): fault-around and its unmapping
+  (`filemap_map_pages`, `next_uptodate_folio`, `set_pte_range`,
+  `__zap_vma_range`, rmap) ~10 % of all instructions, the page allocator
+  ~3 %, 9p with netfs and virtio ~6 %; exit_group 155k instructions per
+  call (13 calls), execve 70k (14), clone 46k (11). 5800 kernel
+  instructions per user page fault, 6200 per system call.
+
 ## Applications after their start (measured 2026-11-14)
 
 `STEADY=1` of `tools/pod-bench` measures requests after a warm-up. Node.js, one new
