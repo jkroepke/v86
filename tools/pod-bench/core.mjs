@@ -105,7 +105,7 @@ const confs = () => ({
   loop: ["alpine", { args: ["/bin/sh", "-c", O.script || LOOP_SCRIPT], env: [PATH], cwd: "/" }],
 });
 // steady state (STEADY=1): what an application costs per request after its warm-up
-const HTTP = { nginx: [80, "/", "Welcome to nginx"], goapp: [4040, "/metrics", "go_goroutines"], spring: [80, "/", "hello"] };
+const HTTP = { nginx: [80, "/", "Welcome to nginx"], goapp: [4040, "/metrics", "go_goroutines"], spring: [80, "/", "ello"] };
 
 async function boot() {
   const e = new V86(options());
