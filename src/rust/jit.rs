@@ -2450,6 +2450,50 @@ fn jit_generate_basic_block(ctx: &mut JitContext, block: &BasicBlock) {
     }
 }
 
+// Pages that stay warm. JIT_THRESHOLD is high because most code of a program start runs only
+// for a short time, and a module costs a compile (and V8 optimises it later on a background
+// thread). Code that serves requests runs again and again, but a page of it may need minutes
+// to collect JIT_THRESHOLD instructions, and runs in the interpreter until then. So
+// jit_epoch (from main_loop, once per JIT_EPOCH_MS) looks at every page with entry points:
+// a page that ran in the interpreter in JIT_WARM_EPOCHS epochs and collected
+// JIT_WARM_THRESHOLD instructions is compiled at its next interpreted block.
+pub static mut JIT_EPOCH_MS: u32 = 1000;
+pub static mut JIT_WARM_EPOCHS: u32 = 2;
+pub static mut JIT_WARM_THRESHOLD: u32 = 50 * 1000;
+// per page: the hotness at the last epoch, and the epochs in which it grew
+static mut PAGE_WARM_LAST: [u32; 0x100000] = [0; 0x100000];
+static mut PAGE_WARM_EPOCHS: [u8; 0x100000] = [0; 0x100000];
+
+#[allow(static_mut_refs)]
+pub fn jit_epoch() {
+    if unsafe { JIT_DISABLED || JIT_WARM_EPOCHS == 0 } {
+        return;
+    }
+    let ctx = get_jit_state();
+    for page in ctx.entry_points.keys() {
+        let p = page.to_u32() as usize;
+        unsafe {
+            let h = PAGE_HOTNESS[p];
+            let last = PAGE_WARM_LAST[p];
+            PAGE_WARM_LAST[p] = h;
+            if h < last {
+                // compiled or dropped since the last epoch
+                PAGE_WARM_EPOCHS[p] = 0;
+                continue;
+            }
+            if h == last {
+                continue;
+            }
+            let epochs = PAGE_WARM_EPOCHS[p].saturating_add(1);
+            PAGE_WARM_EPOCHS[p] = epochs;
+            if epochs as u32 >= JIT_WARM_EPOCHS && h >= JIT_WARM_THRESHOLD && h < JIT_THRESHOLD {
+                profiler::stat_increment(stat::COMPILE_WARM_PAGE);
+                PAGE_HOTNESS[p] = JIT_THRESHOLD;
+            }
+        }
+    }
+}
+
 pub fn jit_increase_hotness_and_maybe_compile(
     virt_address: i32,
     phys_address: u32,
@@ -2883,6 +2927,9 @@ pub unsafe fn set_jit_config(index: u32, value: u32) {
         5 => codegen::JIT_SIMD = value != 0,
         7 => JIT_COLD_BLOCKS = value != 0,
         8 => codegen::JIT_BAIL = value != 0,
+        10 => JIT_EPOCH_MS = value,
+        11 => JIT_WARM_EPOCHS = value,
+        12 => JIT_WARM_THRESHOLD = value,
         _ => dbg_assert!(false),
     }
 }
@@ -2898,6 +2945,9 @@ pub unsafe fn get_jit_config(index: u32) -> u32 {
         5 => codegen::JIT_SIMD as u32,
         7 => JIT_COLD_BLOCKS as u32,
         8 => codegen::JIT_BAIL as u32,
+        10 => JIT_EPOCH_MS,
+        11 => JIT_WARM_EPOCHS,
+        12 => JIT_WARM_THRESHOLD,
         _ => 0,
     }
 }

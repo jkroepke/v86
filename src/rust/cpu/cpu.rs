@@ -3695,11 +3695,18 @@ unsafe fn hlt_wait(t: f64) -> f64 {
     if hlt_exact { t } else { t.ceil().max(1.0) }
 }
 
+static mut jit_last_epoch: f64 = 0.0;
+
 #[no_mangle]
 pub unsafe fn main_loop() -> f64 {
     profiler::stat_increment(stat::MAIN_LOOP);
 
     let start = js::microtick();
+
+    if start - jit_last_epoch >= jit::JIT_EPOCH_MS as f64 {
+        jit_last_epoch = start;
+        jit::jit_epoch();
+    }
 
     if *in_hlt {
         if *flags & FLAG_INTERRUPT != 0 {

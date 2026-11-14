@@ -165,6 +165,7 @@ pub enum stat {
     COMPILE_COLD_EDGE,
     COMPILE_WITHOUT_MARKS,
     JIT_BAIL,
+    COMPILE_WARM_PAGE,
 }
 
 #[allow(non_upper_case_globals)]
@@ -422,6 +423,17 @@ pub fn profiler_init() {
 pub fn profiler_stat_get(stat: stat) -> f64 {
     if cfg!(feature = "profiler") {
         unsafe { stat_array[stat as usize] as f64 }
+    }
+    else {
+        0.0
+    }
+}
+
+// entries into the module in this slot of the table since profiler_init (or its compile)
+#[no_mangle]
+pub fn profiler_module_entries(index: u32) -> f64 {
+    if (index as usize) < MODULES {
+        unsafe { MODULE_ENTRIES[index as usize] as f64 }
     }
     else {
         0.0
