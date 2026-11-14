@@ -5,13 +5,13 @@ use std::iter;
 use crate::jit::{BasicBlock, BasicBlockType, MAX_EXTRA_BASIC_BLOCKS};
 use crate::profiler;
 
-const ENTRY_NODE_ID: u32 = 0xffff_ffff;
+pub const ENTRY_NODE_ID: u32 = 0xffff_ffff;
 
 // this code works fine with either BTree or Hash Maps/Sets
 // - HashMap / HashSet: slightly faster
 // - BTreeMap / BTreeSet: stable iteration order (graphs don't change between rust versions, required for expect tests)
 type Set = BTreeSet<u32>;
-type Graph = BTreeMap<u32, Set>;
+pub type Graph = BTreeMap<u32, Set>;
 
 /// Reverse the direction of all edges in the graph
 fn rev_graph_edges(nodes: &Graph) -> Graph {
@@ -422,4 +422,54 @@ pub fn blockify(blocks: &mut Vec<WasmStructure>, edges: &Graph) {
         // skip the inserted block and this block
         i = source + 2;
     }
+}
+
+/// Split the blocks of a module into regions (one wasm function each): in topological order of
+/// the strongly connected groups, a group joins a region of one of its predecessors if that
+/// stays within max_bytes of guest code, else it starts a new region. A group is never split.
+pub fn regions(nodes: &Graph, max_bytes: u32, size: &dyn Fn(u32) -> u32) -> Vec<Vec<u32>> {
+    let rev_nodes = rev_graph_edges(nodes);
+    let groups = scc(nodes, &rev_nodes);
+
+    let mut region_of: BTreeMap<u32, usize> = BTreeMap::new();
+    let mut regions: Vec<Vec<u32>> = Vec::new();
+    let mut region_bytes: Vec<u32> = Vec::new();
+
+    for group in groups {
+        if group.len() == 1 && group[0] == ENTRY_NODE_ID {
+            continue;
+        }
+        let bytes: u32 = group.iter().map(|&addr| size(addr)).sum();
+        // regions of the predecessors, the one with the most edges into the group first
+        let mut preds: BTreeMap<usize, u32> = BTreeMap::new();
+        for addr in &group {
+            if let Some(from) = rev_nodes.get(addr) {
+                for f in from {
+                    if *f == ENTRY_NODE_ID || group.contains(f) {
+                        continue;
+                    }
+                    *preds.entry(*region_of.get(f).unwrap()).or_insert(0) += 1;
+                }
+            }
+        }
+        let mut preds: Vec<(usize, u32)> = preds.into_iter().collect();
+        preds.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        let r = match preds
+            .iter()
+            .find(|(r, _)| region_bytes[*r] + bytes <= max_bytes)
+        {
+            Some(&(r, _)) => r,
+            None => {
+                regions.push(Vec::new());
+                region_bytes.push(0);
+                regions.len() - 1
+            },
+        };
+        region_bytes[r] += bytes;
+        for &addr in &group {
+            region_of.insert(addr, r);
+            regions[r].push(addr);
+        }
+    }
+    regions
 }

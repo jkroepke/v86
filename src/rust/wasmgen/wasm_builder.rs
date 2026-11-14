@@ -92,6 +92,9 @@ pub struct WasmBuilder {
     free_locals_i64: Vec<WasmLocalI64>,
     local_count: u8,
     pub arg_local_initial_state: WasmLocal,
+
+    // finished functions of a module with more than one function: (returns i32, body)
+    functions: Vec<(bool, Vec<u8>)>,
 }
 
 #[derive(Eq, PartialEq)]
@@ -138,6 +141,7 @@ impl WasmBuilder {
             free_locals_i64: Vec::with_capacity(8),
             local_count: 0,
             arg_local_initial_state: WasmLocal(0),
+            functions: Vec::new(),
         };
         b.init();
         b
@@ -169,15 +173,133 @@ impl WasmBuilder {
         self.free_locals_i32.clear();
         self.free_locals_i64.clear();
         self.local_count = 0;
+        self.functions.clear();
 
         dbg_assert!(self.label_to_depth.is_empty());
         dbg_assert!(self.label_stack.is_empty());
         self.next_label = Label::ZERO;
     }
 
+    /// Encode the locals and the instructions of the current function (without its size) and
+    /// start a new, empty function
+    fn take_function_body(&mut self) -> Vec<u8> {
+        dbg_assert!(self.label_to_depth.is_empty());
+        dbg_assert!(self.label_stack.is_empty());
+        dbg_assert!(
+            self.local_count as usize == self.free_locals_i32.len() + self.free_locals_i64.len(),
+            "All locals should have been freed"
+        );
+
+        let mut body = Vec::with_capacity(self.instruction_body.len() + 16);
+
+        let free_locals_i32 = &self.free_locals_i32;
+        let free_locals_i64 = &self.free_locals_i64;
+
+        let locals = (0..self.local_count).map(|i| {
+            let local_index = WASM_MODULE_ARGUMENT_COUNT + i;
+            if free_locals_i64.iter().any(|v| v.idx() == local_index) {
+                op::TYPE_I64
+            }
+            else {
+                dbg_assert!(free_locals_i32.iter().any(|v| v.idx() == local_index));
+                op::TYPE_I32
+            }
+        });
+        let mut groups = vec![];
+        for local_type in locals {
+            if let Some(last) = groups.last_mut() {
+                let (last_type, last_count) = *last;
+                if last_type == local_type {
+                    *last = (local_type, last_count + 1);
+                    continue;
+                }
+            }
+            groups.push((local_type, 1));
+        }
+        dbg_assert!(groups.len() < 128);
+        body.push(groups.len().safe_to_u8());
+        for (local_type, count) in groups {
+            dbg_assert!(count < 128);
+            body.push(count);
+            body.push(local_type);
+        }
+
+        body.append(&mut self.instruction_body);
+        body.push(op::OP_END);
+
+        self.free_locals_i32.clear();
+        self.free_locals_i64.clear();
+        self.local_count = 0;
+        self.next_label = Label::ZERO;
+        body
+    }
+
+    /// Finish the current function of a module with several functions. Its index among the
+    /// functions of the module is the number of functions finished before it. The last finished
+    /// function is exported as `f`; it must take one i32 and return nothing.
+    pub fn finish_function(&mut self, returns_i32: bool) {
+        let body = self.take_function_body();
+        self.functions.push((returns_i32, body));
+    }
+
+    /// Call the function with the given index among the functions of this module. No function may
+    /// be imported after this call (the index of the first own function would move).
+    pub fn call_own_fn(&mut self, index: u32) {
+        self.instruction_body.push(op::OP_CALL);
+        write_leb_u32(&mut self.instruction_body, self.import_count as u32 + index);
+    }
+
+    fn finish_functions(&mut self) -> usize {
+        dbg_assert!(self.instruction_body.is_empty());
+        dbg_assert!(self.functions.last().map_or(false, |f| !f.0));
+
+        let fn_count = self.functions.len();
+        let first_own_fn = self.import_count as u32;
+
+        self.write_memory_import();
+
+        // function section
+        self.output.push(op::SC_FUNCTION);
+        let mut section = Vec::new();
+        write_leb_u32(&mut section, fn_count as u32);
+        for (returns_i32, _) in &self.functions {
+            section.push(if *returns_i32 { FunctionType::FN1_RET } else { FunctionType::FN1 }.to_u8());
+        }
+        write_leb_u32(&mut self.output, section.len() as u32);
+        self.output.append(&mut section);
+
+        // export section: the last function as f
+        let mut section = Vec::new();
+        section.push(1);
+        section.push(1);
+        section.push('f' as u8);
+        section.push(op::EXT_FUNCTION);
+        write_leb_u32(&mut section, first_own_fn + fn_count as u32 - 1);
+        self.output.push(op::SC_EXPORT);
+        write_leb_u32(&mut self.output, section.len() as u32);
+        self.output.append(&mut section);
+
+        // code section
+        let mut section = Vec::new();
+        write_leb_u32(&mut section, fn_count as u32);
+        for (_, body) in self.functions.drain(..) {
+            write_leb_u32(&mut section, body.len() as u32);
+            section.extend(body);
+        }
+        self.output.push(op::SC_CODE);
+        write_leb_u32(&mut self.output, section.len() as u32);
+        self.output.append(&mut section);
+
+        self.output.len()
+    }
+
     pub fn finish(&mut self) -> usize {
         dbg_assert!(self.label_to_depth.is_empty());
         dbg_assert!(self.label_stack.is_empty());
+
+        if !self.functions.is_empty() {
+            return self.finish_functions();
+        }
 
         self.write_memory_import();
         self.write_function_section();

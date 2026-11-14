@@ -165,6 +165,10 @@ pub enum stat {
     COMPILE_COLD_EDGE,
     COMPILE_WITHOUT_MARKS,
     JIT_BAIL,
+    COMPILE_FUNCTION,
+    COMPILE_SPLIT_MODULE,
+    REGION_CALL,
+    REGION_LEAVE,
 }
 
 #[allow(non_upper_case_globals)]
