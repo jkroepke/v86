@@ -279,7 +279,7 @@
             (get_local $l8)))
         (return))
       (i32.store8
-        (i32.const 12734204)
+        (i32.const 12734208)
         (i32.const 1))
       (i32.store
         (i32.const 556)

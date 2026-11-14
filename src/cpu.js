@@ -1815,6 +1815,169 @@ CPU.prototype.load_bios = function()
         }.bind(this));
 };
 
+// Modules of the JIT for later instances with the same code at the same physical pages (the
+// kernel of a restored state). jit_record_start before the guest runs keeps the bytes of every
+// module; jit_export packs the modules that are in use; jit_prepare (starter.js) compiles a
+// packed list once; jit_import installs it in a new instance. See jit_layout_id in jit.rs.
+const JIT_EXPORT_MAGIC = 0x4a363876; // "v86J"
+const JIT_EXPORT_VERSION = 1;
+
+// two 32-bit hashes of a page of guest memory
+export function jit_page_hash(mem8, page)
+{
+    const words = new Int32Array(mem8.buffer, mem8.byteOffset + (page << 12), 1024);
+    let h1 = 0x811c9dc5 | 0, h2 = 0x9e3779b9 | 0;
+    for(let i = 0; i < 1024; i++)
+    {
+        const w = words[i];
+        h1 = Math.imul(h1 ^ w, 0x01000193);
+        h2 = Math.imul(h2 + w | 0, 0x85ebca6b) ^ (h2 >>> 13);
+    }
+    return [h1 >>> 0, h2 >>> 0];
+}
+
+CPU.prototype.jit_record_start = function()
+{
+    this.jit_record = new Map();
+};
+
+/**
+ * @param {boolean} kernel_only only modules of code that ran with cpl 0
+ * @param {number=} limit at most this many modules, the most entered ones
+ * @return {ArrayBuffer}
+ */
+CPU.prototype.jit_export = function(kernel_only, limit)
+{
+    dbg_assert(this.jit_record, "jit_export needs jit_record_start");
+    const ex = this.wm.exports;
+    const get = ex["jit_export_get"];
+    const n = ex["jit_export_collect"](!!kernel_only);
+    let list = [];
+    for(let i = 0; i < n; i++)
+    {
+        const bytes = this.jit_record.get(get(i, 1));
+        if(bytes) list.push({ i, bytes, use: get(i, 4) });
+    }
+    list.sort((a, b) => b.use - a.use);
+    if(limit) list = list.slice(0, limit);
+    const parts = [];
+    let size = 16;
+    for(const { i, bytes } of list)
+    {
+        const page = get(i, 0);
+        const k = get(i, 3);
+        const head = new Uint32Array(7 + k);
+        const [h1, h2] = jit_page_hash(this.mem8, page);
+        head.set([page, get(i, 1), get(i, 2), h1, h2, k, bytes.length]);
+        for(let j = 0; j < k; j++) head[7 + j] = get(i, 5 + 2 * j) | get(i, 6 + 2 * j) << 16;
+        parts.push(head, bytes);
+        size += head.byteLength + (bytes.length + 3 & ~3);
+    }
+    const out = new Uint8Array(size);
+    new Uint32Array(out.buffer, 0, 4).set([JIT_EXPORT_MAGIC, JIT_EXPORT_VERSION, ex["jit_layout_id"](), parts.length / 2]);
+    let off = 16;
+    for(let i = 0; i < parts.length; i += 2)
+    {
+        out.set(new Uint8Array(parts[i].buffer), off);
+        off += parts[i].byteLength;
+        out.set(parts[i + 1], off);
+        off += parts[i + 1].length + 3 & ~3;
+    }
+    return out.buffer;
+};
+
+/**
+ * Parses an export and compiles its modules (once, for any number of instances)
+ * @param {ArrayBuffer} buffer
+ * @return {Promise<Object>}
+ */
+export async function jit_prepare(buffer)
+{
+    const head = new Uint32Array(buffer, 0, 4);
+    if(head[0] !== JIT_EXPORT_MAGIC || head[1] !== JIT_EXPORT_VERSION)
+    {
+        throw new Error("jit_prepare: not an export of this version");
+    }
+    const list = [];
+    let off = 16;
+    for(let i = 0; i < head[3]; i++)
+    {
+        const h = new Uint32Array(buffer, off, 7);
+        const k = h[5], len = h[6];
+        const entries = new Uint32Array(buffer.slice(off + 28, off + 28 + 4 * k));
+        off += 28 + 4 * k;
+        const bytes = new Uint8Array(buffer, off, len);
+        off += len + 3 & ~3;
+        list.push({
+            "page": h[0], "index": h[1], "flags": h[2], "hash": [h[3], h[4]], "entries": entries,
+            "module": WebAssembly.compile(bytes),
+        });
+    }
+    for(const m of list) m["module"] = await m["module"];
+    jit_compile_now(list);
+    return { "layout": head[2], "modules": list };
+}
+
+// V8 compiles the function of a module at its first call, which would be on the thread of the
+// first instance that runs it. So each function is called once here, in an instance of its own
+// with a scratch memory whose imports throw: it stops at its first access outside the scratch
+// memory, its first import or its loop limit (JIT_USE_LOOP_SAFETY). The compiled code stays
+// with the Module.
+function jit_compile_now(list)
+{
+    const memory = new WebAssembly.Memory({ "initial": 64 });
+    const stop = () => { throw new Error("stop"); };
+    const imports = new Proxy({}, { get: (_, k) => k === "m" ? memory : stop });
+    for(const m of list)
+    {
+        try
+        {
+            new WebAssembly.Instance(m["module"], { "e": imports }).exports["f"](0);
+        }
+        catch(e)
+        {
+            // the expected end
+        }
+    }
+}
+
+/**
+ * Installs the modules of jit_prepare whose pages hold the same bytes as when they were
+ * exported. Call it after restore_state, before the guest runs.
+ * @return {number} the number of modules installed
+ */
+CPU.prototype.jit_import = function(prepared)
+{
+    const ex = this.wm.exports;
+    if(prepared["layout"] !== ex["jit_layout_id"]() >>> 0)
+    {
+        return 0;
+    }
+    let n = 0;
+    for(const m of prepared["modules"])
+    {
+        const page = m["page"];
+        if((page + 1) << 12 > this.mem8.length || (page + 1) << 12 <= 0) continue;
+        const [h1, h2] = jit_page_hash(this.mem8, page);
+        if(h1 !== m["hash"][0] || h2 !== m["hash"][1]) continue;
+        let f;
+        try
+        {
+            f = new WebAssembly.Instance(m["module"], { "e": this.jit_imports }).exports["f"];
+        }
+        catch(e)
+        {
+            continue;
+        }
+        const entries = m["entries"];
+        for(let j = 0; j < entries.length; j++) ex["jit_import_entry"](entries[j] & 0xFFFF, entries[j] >>> 16);
+        if(!ex["jit_import_page"](page, m["index"], m["flags"])) continue;
+        this.wm.wasm_table.set(m["index"] + WASM_TABLE_OFFSET, f);
+        n++;
+    }
+    return n;
+};
+
 CPU.prototype.codegen_finalize = function(wasm_table_index, start, state_flags, ptr, len)
 {
     ptr >>>= 0;
@@ -1823,6 +1986,11 @@ CPU.prototype.codegen_finalize = function(wasm_table_index, start, state_flags, 
     dbg_assert(wasm_table_index >= 0 && wasm_table_index < WASM_TABLE_SIZE);
 
     const code = new Uint8Array(this.wasm_memory.buffer, ptr, len);
+
+    if(this.jit_record)
+    {
+        this.jit_record.set(wasm_table_index, code.slice());
+    }
 
     if(DEBUG)
     {

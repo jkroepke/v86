@@ -15,6 +15,7 @@ image from a 9p root file system (like `web/src/vmworker.js` in tabernetes).
 |--------|-----------------------|------------------------------|------------------------------------------------|
 | nginx  | `nginx` (Debian)      | HTTP answer on port 80       | program start, ~51M instructions, 82 % interpreted |
 | cpu    | `alpine`              | exit; sha256 sums must match | JIT code: shell loop, gzip, sha256 (~2.4G instr) |
+| warm   | `alpine`              | exit; sha256 sums must match | a generic start for KJIT: httpd and wget over loopback, ls, gzip, find |
 | glibc  | `nginx` (Debian)      | exit                         | grep/sort/sed/awk on text, glibc SSE2 string functions |
 | goapp  | access-log-exporter   | HTTP on 4040, then 20 scrapes of /metrics | a static Go binary (386): runtime start, GC, int 0x80 system calls |
 | spring | see below             | HTTP answer on port 80       | a JVM (C1 JIT code in the guest), ~100 s, jumps between pages |
@@ -63,6 +64,13 @@ instructions (32-bit counter: wraps for spring). Run-to-run noise is about
 - `IDLE_MS=n`: after the workload, let the pod idle for n ms and print the CPU time
   and the guest instructions per second (with `GSTAT`, the counters are of that time)
 - `CMDLINE="..."`: another kernel command line (default `console=ttyS0 quiet loglevel=3`)
+- `KJIT=n [KJIT_WL=warm] [KJIT_TOP=k] [KJIT_FILE=x.bin]`: kernel JIT modules (`jit_export`,
+  `V86.jit_prepare`, `jit_import`). One extra start (workload `KJIT_WL`, default the measured
+  one) runs with the JIT threshold n and exports the modules of kernel code; they are compiled
+  once and installed in every round after the restore; `KJIT_TOP` keeps the k most entered
+  ones. `KJIT_FILE` writes them there, or reads
+  them if the file exists. `warm` is a generic busybox start for this (processes, 9p, pipes,
+  TCP over loopback)
 - `ab.sh <workload> <reps> <dirA> <dirB>`: alternating runs of two builds
 - `BENCH_DATA`, `VMDIR`, `TABERNETES_SRC`: other locations of the data
 

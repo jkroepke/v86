@@ -280,6 +280,56 @@ Counters of `src/rust/gueststat.rs` (`GSTAT=` of `tools/pod-bench`), Linux
   objects across page boundaries), grouped only 7 % and its process CPU
   went up 79.6 -> 84.3 s with the same main thread. Parked.
 
+## Kernel JIT modules for every pod (measured 2026-11-14)
+
+- Every pod restores the same VM state: the kernel has the same code at
+  the same physical pages in every pod, only the image is new. But each
+  pod is a new instance with an empty JIT, and kernel code spreads over
+  ~400 pages, so few kernel pages reach the threshold in a start: nginx ran
+  its kernel instructions (55 %, 69 % of the time) almost all in the
+  interpreter.
+- `jit_record_start`, `jit_export(limit)`, `V86.jit_prepare` and
+  `jit_import` (`src/cpu.js`, `jit_export_*`/`jit_import_*` in `jit.rs`):
+  one start with a low threshold records the modules of cpl 0 code; the
+  embedder ships them (tabernetes builds them with its kernel), compiles
+  them once (the Modules can be posted to workers) and installs them in
+  each new instance after `restore_state`. A module has no virtual
+  addresses in it (eip is set relative to its page), but it has its table
+  index and the addresses of statics of v86.wasm: the import takes the
+  same table index, `jit_layout_id` rejects another layout of v86.wasm
+  (compare it unsigned: `>>> 0`), and two 32-bit hashes of each page must
+  match. A page that the guest writes later drops its module as usual.
+  CHECK_JIT_STATE_INVARIANTS passed with imports (debug build).
+- V8 compiles a function at its first call (lazy compilation, Node.js and
+  Chromium): `jit_prepare` calls each function once in an instance with a
+  scratch memory whose imports throw, so the first pod does not compile
+  them (~100 ms in Chromium for 200 modules).
+- Recording: the generic busybox start `warm` of pod-bench (httpd + wget
+  over loopback, ls, gzip, find), threshold 20k: ~200 modules, 3.3-4.2 MB
+  (0.5-0.6 MB gzip); 5k and 100k were the same within the noise.
+  Installing them takes 2-5 ms per pod. `jit_export(limit)` keeps the most
+  entered modules (`MODULE_USE`): 50 are 1.15 MB (0.17 MB gzip).
+- Node.js, recorded with `warm`, measured with other workloads (3 x 4
+  alternating rounds in one process, main thread / process CPU, all
+  modules): nginx 553 / 860 -> 369 / 760 ms (wall 561 -> 387 ms), goapp to
+  its first answer 509 -> 411 ms (cpu 987 -> 860 ms), glibc 4027 / 5800 ->
+  3272 / 4410 ms; spring (kernel 4 %) 48.8 / 62.8 -> 49.6 / 62.7 s (noise).
+- The cost is the first pod of a process (a tab): V8 optimises the hot
+  modules with TurboFan then (~1.5 us per byte on other threads). nginx in
+  a fresh Node.js process, first / later pod, wall time against no modules
+  (4 alternating runs, busy 4-core machine): 25 modules +5 % / -4 %, 50
+  +19 % / -18 %, 100 +47 % / -19 %, all +40 % / -30 %; process CPU of the
+  first pod +0.2 / +0.4 / +0.8 / +1.4 s, later pods with 50: -9 %. Headless
+  Chromium, 5 pods per tab, each in a new worker: first pod 625 -> 825 ms
+  (50 modules) and 745 ms (all), later pods 596 -> 508 ms (50) and 390 ms
+  (all); CPU of all Chromium processes for the 5 pods 8.2 -> 8.1 s (50)
+  and 8.9 s (all). Calling the functions a few hundred times in the
+  scratch instance did not get them optimised earlier.
+- Dropped without measuring, because they only help a second start of
+  the same app: a JIT profile of the app (pages and entry points, keyed by
+  a hash of the page) and a VM state saved after the app answered. The
+  kernel modules are the part of that idea that every pod shares.
+
 ## Instruction set extensions: what pays (measured 2026-11-13)
 
 - Who uses them in an i386 pod: OpenSSL (SHA-1/256 with SHA: 5-6x fewer
@@ -414,5 +464,10 @@ Counters of `src/rust/gueststat.rs` (`GSTAT=` of `tools/pod-bench`), Linux
   interrupts by vector, port I/O by port, page faults, TLB flushes, a
   histogram of kernel addresses) in the profiler build, or in a release
   build with `V86_GUESTSTAT=1 make build/v86.wasm`.
+- Kernel JIT modules for every pod (2026-11-14, see the section above):
+  `jit_record_start`, `jit_export`, `V86.jit_prepare`, `jit_import`.
+  tabernetes ships the 50 most entered ones with its kernel. nginx in
+  Node.js: the first pod of a process +19 % wall time, every later pod
+  -18 % (main thread -17 %).
 
 Work in progress lives on `wip/*` and `codex/*` branches.

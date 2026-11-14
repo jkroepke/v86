@@ -689,6 +689,34 @@ export class V86 {
     save_state(): Promise<ArrayBuffer>;
 
     /**
+     * Keep the bytes of the modules that the JIT makes, for jit_export.
+     * Call it before run.
+     */
+    jit_record_start(): void;
+
+    /**
+     * The modules of the JIT for kernel code (cpl 0) that are in use, packed.
+     * Another instance of the same v86.wasm, whose guest has the same code at
+     * the same physical pages (for example after restoring the same state),
+     * can install them: see V86.jit_prepare and jit_import.
+     */
+    jit_export(): ArrayBuffer;
+
+    /**
+     * Installs the modules of V86.jit_prepare whose pages have the same bytes
+     * as when they were exported. Call it after restore_state and before run.
+     * @returns the number of modules installed
+     */
+    jit_import(prepared: object): number;
+
+    /**
+     * Compiles the modules of a jit_export once. The result can be posted to
+     * workers (it holds WebAssembly.Module objects) and used by any number of
+     * instances.
+     */
+    static jit_prepare(buffer: ArrayBuffer): Promise<object>;
+
+    /**
      * Get current instruction counter
      */
     get_instruction_counter(): number;

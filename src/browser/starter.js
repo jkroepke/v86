@@ -1,4 +1,5 @@
 import { v86 } from "../main.js";
+import { jit_prepare } from "../cpu.js";
 import { LOG_CPU, WASM_TABLE_OFFSET, WASM_TABLE_SIZE } from "../const.js";
 import { get_rand_int, load_file, read_sized_string_from_mem } from "../lib.js";
 import { dbg_assert, dbg_trace, dbg_log, set_log_level } from "../log.js";
@@ -913,6 +914,42 @@ V86.prototype.save_state = async function()
     dbg_assert(arguments.length === 0);
     return this.v86.save_state();
 };
+
+/**
+ * Keep the bytes of the modules that the JIT makes, for jit_export. Call it before run.
+ */
+V86.prototype.jit_record_start = function()
+{
+    this.v86.cpu.jit_record_start();
+};
+
+/**
+ * The modules of the JIT for kernel code (cpl 0) that are in use, packed. A later instance of
+ * the same v86.wasm whose guest has the same kernel at the same physical pages (for example
+ * after restoring the same state) can use them through jit_prepare and jit_import.
+ * @param {number=} limit at most this many modules, the most entered ones
+ * @return {ArrayBuffer}
+ */
+V86.prototype.jit_export = function(limit)
+{
+    return this.v86.cpu.jit_export(true, limit);
+};
+
+/**
+ * Installs modules of V86.jit_prepare. Call it after restore_state and before run.
+ * @return {number} the number of modules installed
+ */
+V86.prototype.jit_import = function(prepared)
+{
+    return this.v86.cpu.jit_import(prepared);
+};
+
+/**
+ * Compiles the modules of a jit_export once. The result can be posted to other workers.
+ * @param {ArrayBuffer} buffer
+ * @return {Promise<Object>}
+ */
+V86.jit_prepare = jit_prepare;
 
 /**
  * @return {number}

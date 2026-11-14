@@ -84,7 +84,10 @@ const DEFAULT_SCRIPT = "i=0; while [ $i -lt 30000 ]; do i=$((i+1)); done; cat /b
 const GLIBC_SCRIPT = "find / -xdev -name '*.pm' | xargs cat > /tmp/a; cat /tmp/a /tmp/a /tmp/a /tmp/a > /tmp/b; grep -c sub /tmp/b; grep -ci 'return undef' /tmp/b; sort /tmp/b | uniq | wc -l; tr a-z A-Z < /tmp/b | grep -c SUB; sed 's/my /our /g' /tmp/b | wc -c; awk '{n+=length($0)} END {print n}' /tmp/b; cut -c1-20 /tmp/b | sort -u | wc -l; cmp /tmp/b /tmp/b; sha256sum /tmp/b; sha256sum < /tmp/b; echo done";
 // a shell loop, awk and gzip: the same work again and again, in one shell process
 const LOOP_SCRIPT = "head -c 300000 /bin/busybox > /tmp/b; while :; do i=0; while [ $i -lt 3000 ]; do i=$((i+1)); done; awk 'BEGIN{for(i=0;i<30000;i++)s+=i*i%7; print s}' > /dev/null; gzip -c /tmp/b | gunzip | md5sum > /dev/null; echo tick; done";
+// a generic start for the kernel modules of KJIT: processes, files over 9p, pipes, TCP over loopback
+const WARM_SCRIPT = "httpd -p 127.0.0.1:8080 -h /etc; for i in 1 2 3 4 5 6 7 8; do wget -q -O /tmp/p http://127.0.0.1:8080/passwd; ls -l /usr/bin /lib > /dev/null; cat /etc/* 2>/dev/null | gzip | wc -c > /dev/null; done; find / -xdev > /tmp/b; sha256sum /tmp/b; sha256sum < /tmp/b; echo done";
 const confs = () => ({
+  warm: ["alpine", { args: ["/bin/sh", "-c", WARM_SCRIPT], env: [PATH], cwd: "/" }],
   nginx: ["nginx", { args: ["/docker-entrypoint.sh", "nginx", "-g", "daemon off;"], env: [PATH, "NGINX_VERSION=1"], cwd: "/" }],
   spring: ["spring", O.spring],
   cpu: ["alpine", { args: ["/bin/sh", "-c", O.script || DEFAULT_SCRIPT], env: [PATH], cwd: "/" }],
@@ -170,7 +173,7 @@ async function steady(e, wl, con, r, t0, cpu) {
 }
 const pct = (a, p) => a.slice().sort((x, y) => x - y)[Math.min(a.length - 1, Math.floor(a.length * p))];
 
-async function pod(state, wl) {
+async function pod(state, wl, rec) {
   const [img, c] = confs()[wl];
   const conf = { ...c, user: "", hostname: "bench", ip: IP, gateway: GATEWAY, stdin: false, stdinOnce: false, tty: false };
   const e = new V86(options());
@@ -179,11 +182,14 @@ async function pod(state, wl) {
   const tr = performance.now();
   await e.restore_state(state);
   const restoreMs = performance.now() - tr;
+  const r0 = {};
   const control = lines(e, 1);
   const con = lines(e, 0);
   const f = rootfs(img, conf);
   e.fs9p.storage = f.storage; e.fs9p.load_from_json(f.json);
   const cpu = e.v86.cpu;
+  if (rec) { e.jit_record_start(); cpu.set_jit_config(4, rec.threshold); }
+  if (O.kjit) { const t = performance.now(); r0.imported = e.jit_import(O.kjit); r0.importMs = performance.now() - t; }
   if (O.stats) cpu.wm.exports.profiler_init();
   if (O.gstat) cpu.wm.exports.gueststat_reset();
   const i0 = cpu.instruction_counter[0];
@@ -192,7 +198,7 @@ async function pod(state, wl) {
   e.run();
   e.serial_send_bytes(1, new TextEncoder().encode(`go ${Date.now()} ${"ab".repeat(32)}\n`));
   await until("started", () => control.includes("started") || control.some((l) => l.startsWith("exit")));
-  const r = { started: performance.now() - t0, restore: restoreMs };
+  const r = { ...r0, started: performance.now() - t0, restore: restoreMs };
   try {
     if (O.steady) {
       await steady(e, wl, con, r, t0, cpu);
@@ -241,6 +247,7 @@ async function pod(state, wl) {
     const arr = (kind, n) => { const out = []; for (let i = 0; i < n; i++) { const v = g(kind, i); if (v) out.push([i, v]); } return out; };
     O.gstatOut({ names: O.gstat, counters: O.gstat.map((_, i) => g(0, i)), vectors: arr(1, 256), syscalls: arr(2, 512), syscallInstr: arr(3, 512), portReads: arr(4, 65536), portWrites: arr(5, 65536), khist: arr(6, 1 << 20), uhist: arr(7, 1 << 20), wallMs: r.done, cpuMs: r.cpu });
   }
+  if (rec) rec.out = e.jit_export(O.kjitTop);
   await e.destroy();
   return r;
 }
@@ -252,6 +259,20 @@ export async function run(o) {
   const b = o.state ? { ms: 0, instr: 0, state: o.state } : await boot();
   if (o.onState) o.onState(b.state);
   log(`boot ready ${b.ms.toFixed(0)} ms ${(b.instr / 1e6).toFixed(1)}M instr`);
+  if (o.kjitThreshold || o.kjitBlob) {
+    // kernel modules: recorded in one start with a low JIT threshold (or read from a file),
+    // compiled once, installed in every round (jit_export, V86.jit_prepare, jit_import)
+    let blob = o.kjitBlob;
+    if (!blob) {
+      const rec = { threshold: o.kjitThreshold };
+      await pod(b.state, o.kjitWorkload || o.workload, rec);
+      blob = rec.out;
+      o.onKjit?.(blob);
+    }
+    const t = performance.now();
+    O.kjit = await V86.jit_prepare(blob);
+    log(`kjit: ${O.kjit.modules.length} kernel modules, ${(blob.byteLength / 1024).toFixed(0)} KiB, prepared in ${(performance.now() - t).toFixed(0)} ms`);
+  }
   const res = [];
   for (let i = 0; i < o.rounds; i++) {
     await o.hook?.(i, "start");
@@ -268,7 +289,7 @@ export async function run(o) {
       log(`${o.workload} steady ${i}: ${s.n} requests after ${O.warm ?? 20}, up ${r.up.toFixed(0)} ms: ${s.ms.toFixed(2)} ms/req (${s.rps.toFixed(1)}/s), cpu ${s.cpu.toFixed(2)} ms/req${o.pcpu ? `, process cpu ${s.pcpu.toFixed(2)} ms/req` : ""}, ${s.minstr.toFixed(3)}M instr/req, latency p50 ${s.p50.toFixed(2)} p90 ${s.p90.toFixed(2)} p99 ${s.p99.toFixed(2)} max ${s.max.toFixed(2)} ms`);
       continue;
     }
-    log(`${o.workload} round ${i}: restore ${r.restore.toFixed(0)} ms, started ${r.started.toFixed(0)} ms, done ${r.done.toFixed(0)} ms, cpu ${r.cpu.toFixed(0)} ms${o.pcpu ? `, process cpu ${r.pcpu.toFixed(0)} ms` : ""}, ${r.minstr.toFixed(1)}M instr, ${(r.minstr / r.done * 1000).toFixed(1)}M instr/s${O.idleMs ? `, idle: cpu ${r.idleCpu.toFixed(1)} ms/s, ${(r.idleInstr / 1000).toFixed(0)}k instr/s` : ""}${r.up ? `, up ${r.up.toFixed(0)} ms, scrape ${r.scrape.toFixed(1)} ms` : ""}`);
+    log(`${o.workload} round ${i}: restore ${r.restore.toFixed(0)} ms, started ${r.started.toFixed(0)} ms, done ${r.done.toFixed(0)} ms, cpu ${r.cpu.toFixed(0)} ms${r.imported !== undefined ? `, imported ${r.imported} in ${r.importMs.toFixed(1)} ms` : ""}${o.pcpu ? `, process cpu ${r.pcpu.toFixed(0)} ms` : ""}, ${r.minstr.toFixed(1)}M instr, ${(r.minstr / r.done * 1000).toFixed(1)}M instr/s${O.idleMs ? `, idle: cpu ${r.idleCpu.toFixed(1)} ms/s, ${(r.idleInstr / 1000).toFixed(0)}k instr/s` : ""}${r.up ? `, up ${r.up.toFixed(0)} ms, scrape ${r.scrape.toFixed(1)} ms` : ""}`);
   }
   const med = (a) => a.slice().sort((x, y) => x - y)[a.length >> 1];
   if (res.length && res[0].ss) {

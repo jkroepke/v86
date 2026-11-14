@@ -71,7 +71,9 @@ await run({
   spring: fs.existsSync(springJSON) ? JSON.parse(fs.readFileSync(springJSON)) : null,
   hook, cpu, pcpu, stats, gstat, gstatOut, idleMs: Number(process.env.IDLE_MS || 0), scrapes: process.env.SCRAPES ? Number(process.env.SCRAPES) : undefined,
   steady: process.env.STEADY === "1", warm: process.env.WARM ? Number(process.env.WARM) : undefined, reqs: process.env.REQS ? Number(process.env.REQS) : undefined, httpTimeout: Number(process.env.HTTP_TIMEOUT || 0), cmdline: process.env.CMDLINE, mods, v86dir: V86DIR, read, workload, rounds: Number(rounds),
-  jitcfg: process.env.JITCFG, cpuhide: process.env.CPUHIDE, script: process.env.SCRIPT,
+  jitcfg: process.env.JITCFG, kjitThreshold: Number(process.env.KJIT || 0), kjitWorkload: process.env.KJIT_WL, kjitTop: Number(process.env.KJIT_TOP || 0),
+  kjitBlob: process.env.KJIT_FILE && fs.existsSync(process.env.KJIT_FILE) ? new Uint8Array(fs.readFileSync(process.env.KJIT_FILE)).buffer : undefined,
+  onKjit: process.env.KJIT_FILE ? (b) => fs.writeFileSync(process.env.KJIT_FILE, new Uint8Array(b)) : undefined, cpuhide: process.env.CPUHIDE, script: process.env.SCRIPT,
   v86opts: process.env.V86OPTS && JSON.parse(process.env.V86OPTS), log: console.log,
 });
 process.exit(0);
