@@ -11,12 +11,19 @@ import { BusConnector } from "./bus.js";
 
 const MTU_DEFAULT = 1500;
 
+const VIRTIO_NET_F_CSUM = 0;
+const VIRTIO_NET_F_GUEST_CSUM = 1;
+const VIRTIO_NET_F_HOST_TSO4 = 11;
 const VIRTIO_NET_F_MAC = 5;
 const VIRTIO_NET_F_CTRL_VQ = 17;
 const VIRTIO_NET_F_STATUS = 16;
 const VIRTIO_NET_F_MQ = 22;
 const VIRTIO_NET_F_CTRL_MAC_ADDR = 23;
 const VIRTIO_NET_F_MTU = 3;
+
+const VIRTIO_NET_HDR_F_NEEDS_CSUM = 1;
+const VIRTIO_NET_HDR_F_DATA_VALID = 2;
+const VIRTIO_NET_HDR_GSO_NONE = 0;
 
 const VIRTIO_NET_CTRL_MQ_VQ_PAIRS_SET = 0;
 const VIRTIO_NET_CTRL_MAC_ADDR_SET = 1;
@@ -27,8 +34,9 @@ const VIRTIO_NET_CTRL_MAC_ADDR_SET = 1;
  * @param {BusConnector} bus
  * @param {Boolean} preserve_mac_from_state_image
  * @param {number} mtu
+ * @param {boolean=} offload
  */
-export function VirtioNet(cpu, bus, preserve_mac_from_state_image, mtu = MTU_DEFAULT)
+export function VirtioNet(cpu, bus, preserve_mac_from_state_image, mtu = MTU_DEFAULT, offload = false)
 {
     /** @const @type {BusConnector} */
     this.bus = bus;
@@ -36,6 +44,7 @@ export function VirtioNet(cpu, bus, preserve_mac_from_state_image, mtu = MTU_DEF
     this.pairs = 1;
     this.status = 1;
     this.preserve_mac_from_state_image = preserve_mac_from_state_image;
+    this.offload = offload;
     this.mac = new Uint8Array([
         0x00, 0x22, 0x15,
         Math.random() * 255 | 0,
@@ -77,7 +86,16 @@ export function VirtioNet(cpu, bus, preserve_mac_from_state_image, mtu = MTU_DEF
                 VIRTIO_NET_F_CTRL_VQ,
                 VIRTIO_NET_F_CTRL_MAC_ADDR,
                 VIRTIO_F_VERSION_1,
-            ],
+            ].concat(offload ? [
+                // Only for adapters that end TCP in JavaScript (fake_network.js):
+                // the guest hands over TCP segments of up to 64 KiB without
+                // checksums, and trusts the checksums of what it receives.
+                // That saves the guest a pass over every byte and most of
+                // its work per packet.
+                VIRTIO_NET_F_CSUM,
+                VIRTIO_NET_F_GUEST_CSUM,
+                VIRTIO_NET_F_HOST_TSO4,
+            ] : []),
             on_driver_ok: () => {},
         },
         notification:
@@ -99,6 +117,12 @@ export function VirtioNet(cpu, bus, preserve_mac_from_state_image, mtu = MTU_DEF
                         const bufchain = queue.pop_request();
                         const buffer = new Uint8Array(bufchain.length_readable);
                         bufchain.get_next_blob(buffer);
+                        if((buffer[0] & VIRTIO_NET_HDR_F_NEEDS_CSUM) && buffer[1] === VIRTIO_NET_HDR_GSO_NONE)
+                        {
+                            // A segment larger than the MTU only goes to fake_network.js,
+                            // which does not read the checksum: complete it for the others.
+                            complete_checksum(buffer.subarray(12), buffer[6] | buffer[7] << 8, buffer[8] | buffer[9] << 8);
+                        }
                         this.bus.send("net" + this.id + "-send", buffer.subarray(12));
                         this.bus.send("eth-transmit-end", [buffer.length - 12]);
                         this.virtio.queues[queue_id].push_reply(bufchain);
@@ -192,6 +216,11 @@ export function VirtioNet(cpu, bus, preserve_mac_from_state_image, mtu = MTU_DEF
         const with_header = new Uint8Array(12 + data.byteLength);
         const view = new DataView(with_header.buffer, with_header.byteOffset, with_header.byteLength);
         view.setInt16(10, 1);
+        if(this.offload)
+        {
+            // the checksums of fake_network.js are right
+            with_header[0] = VIRTIO_NET_HDR_F_DATA_VALID;
+        }
         with_header.set(data, 12);
 
         const queue = this.virtio.queues[0];
@@ -207,6 +236,36 @@ export function VirtioNet(cpu, bus, preserve_mac_from_state_image, mtu = MTU_DEF
 
 }
 
+
+/**
+ * The guest leaves the checksum to the device (VIRTIO_NET_HDR_F_NEEDS_CSUM):
+ * the internet checksum of frame[start..], stored at start + offset, where
+ * the guest put the sum of the pseudo header.
+ * @param {Uint8Array} frame
+ * @param {number} start
+ * @param {number} offset
+ */
+function complete_checksum(frame, start, offset)
+{
+    if(start + offset + 2 > frame.length) return;
+    let sum = 0;
+    const end = start + ((frame.length - start) & ~1);
+    for(let i = start; i < end; i += 2)
+    {
+        sum += frame[i] << 8 | frame[i + 1];
+    }
+    if(end < frame.length)
+    {
+        sum += frame[end] << 8;
+    }
+    while(sum >>> 16)
+    {
+        sum = (sum & 0xFFFF) + (sum >>> 16);
+    }
+    sum = ~sum & 0xFFFF;
+    frame[start + offset] = sum >> 8;
+    frame[start + offset + 1] = sum;
+}
 
 VirtioNet.prototype.get_state = function()
 {

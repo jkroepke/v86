@@ -275,6 +275,14 @@ V86.prototype.continue_init = async function(emulator, options)
     // Enable unconditionally, so that state images don't miss hardware
     // TODO: Should be properly fixed in restore_state
     settings.net_device = Object.assign({ type: "ne2k" }, options.net_device);
+    // fetch and wisp end TCP in JavaScript (fake_network.js): they take
+    // segments larger than the MTU and do not check checksums, so the guest
+    // may leave segmentation and checksums to the device (virtio-net only)
+    if(settings.net_device.offload === undefined)
+    {
+        settings.net_device.offload = this.network_adapter instanceof FetchNetworkAdapter ||
+            this.network_adapter instanceof WispNetworkAdapter;
+    }
 
     const screen_options = options.screen || {};
     if(options.screen_container)

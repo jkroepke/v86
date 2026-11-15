@@ -461,6 +461,39 @@ connection per request over the network adapter of v86, release build of 60e7e76
     6.9-7.5 ms against 6.5-6.7 ms, `--liftoff-only` 8.5-8.9 ms (that includes the
     interpreter of v86.wasm on baseline code). The steady state of spring is flat.
 
+## The network adapter (measured 2026-11-15)
+
+tabernetes gives every pod virtio-net with the fetch adapter (`fake_network.js`
+ends TCP in JavaScript); `kubectl port-forward` and `wget <pod IP>` open TCP
+connections into the guest with `network_adapter.connect(port)`. `net` of
+`tools/pod-bench` measures it (4 MiB, md5 checked).
+
+- A SYN of `connect()` had no MSS option, so Linux sent segments of 536 bytes
+  (the default of RFC 9293): a download from the pod took 43M guest
+  instructions for 4 MiB. With the MSS: 20M.
+- Offloads (`net_device.offload`, on by default for the fetch and the wisp
+  adapter, which end TCP in JavaScript): VIRTIO_NET_F_CSUM, GUEST_CSUM and
+  HOST_TSO4. The guest hands over segments of up to 64 KiB without the
+  checksum, and trusts the checksums of what it gets (DATA_VALID). The fake
+  stack takes a segment of any size and reads no checksum; a frame without GSO
+  that needs a checksum gets it in `virtio_net.js`. Download 20M -> 4M
+  instructions. Not for the relay adapters: they put the frames on a real
+  network. GUEST_TSO4 (large segments to the guest) is not done: without
+  MRG_RXBUF Linux posts 64 KiB buffers for every entry of the receive queue.
+- `pump` sent one segment and waited for its ACK; Linux acknowledges every
+  second segment or after a delay. It now sends what the receive window of the
+  guest takes (no window scaling is negotiated, so at most 64 KiB). No
+  retransmission: the link to the guest loses nothing (a full receive queue
+  would drop, as before).
+- Node.js, 3 rounds each, before -> after: download 10.9-11.9 -> 54-63 MB/s,
+  upload 10.5-12.6 -> 25-30 MB/s (71M -> 48M instructions, md5sum of the
+  data included), fetch adapter GET 9.9-10.8 -> 18-22 MB/s, POST 2.6-3.0 ->
+  26-30 MB/s; round trip of 64 bytes 0.28-0.37 ms and the nginx start
+  unchanged. In tabernetes (headless Chromium, `wget <pod IP>` of 4 MiB from
+  nginx) 17-21 -> 59-72 MB/s, an upload over `kubectl exec -i` 0.6 -> 5 MB/s.
+- A new connection with one short exchange is ~5 ms, nearly all of it the fork
+  and exec of the server process in the guest (0.6M instructions).
+
 ## Instruction set extensions: what pays (measured 2026-11-13)
 
 - Who uses them in an i386 pod: OpenSSL (SHA-1/256 with SHA: 5-6x fewer
@@ -600,5 +633,10 @@ connection per request over the network adapter of v86, release build of 60e7e76
   tabernetes ships the 50 most entered ones with its kernel. nginx in
   Node.js: the first pod of a process +19 % wall time, every later pod
   -18 % (main thread -17 %).
+
+- Network (2026-11-15, see the section above): MSS option in the SYN of
+  `connect()`, checksum and TSO offload of virtio-net for the adapters that
+  end TCP in JavaScript, and a send window instead of one segment per ACK.
+  Download from a pod 11 -> 60 MB/s, upload 11 -> 27 MB/s (Node.js).
 
 Work in progress lives on `wip/*` and `codex/*` branches.

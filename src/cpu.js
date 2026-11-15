@@ -1287,7 +1287,7 @@ CPU.prototype.init = function(settings, device_bus)
         }
         else if(settings.net_device.type === "virtio")
         {
-            this.devices.virtio_net = new VirtioNet(this, device_bus, settings.preserve_mac_from_state_image, settings.net_device.mtu);
+            this.devices.virtio_net = new VirtioNet(this, device_bus, settings.preserve_mac_from_state_image, settings.net_device.mtu, !!settings.net_device.offload);
         }
 
         if(settings.fs9p)

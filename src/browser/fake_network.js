@@ -120,22 +120,24 @@ class GrowableRingbuffer
 
     /**
      * @param {Uint8Array} dst_array
+     * @param {number=} offset
      */
-    peek(dst_array)
+    peek(dst_array, offset = 0)
     {
-        const length = Math.min(this.length, dst_array.length);
+        const length = Math.max(0, Math.min(this.length - offset, dst_array.length));
         if(length) {
             const buffer = this.buffer;
             const capacity = buffer.length;
-            const new_tail = this.tail + length;
+            const tail = (this.tail + offset) % capacity;
+            const new_tail = tail + length;
             if(new_tail > capacity) {
                 const buf_len_left = new_tail % capacity;
-                const buf_len_right = capacity - this.tail;
-                dst_array.set(buffer.subarray(this.tail));
+                const buf_len_right = capacity - tail;
+                dst_array.set(buffer.subarray(tail));
                 dst_array.set(buffer.subarray(0, buf_len_left), buf_len_right);
             }
             else {
-                dst_array.set(buffer.subarray(this.tail, new_tail));
+                dst_array.set(buffer.subarray(tail, new_tail));
             }
         }
         return length;
@@ -1068,6 +1070,10 @@ export function TCPConnection(adapter)
     this.net = adapter; // The adapter is stored here
     this.send_buffer = new GrowableRingbuffer(2048, 0);
     this.send_chunk_buf = new Uint8Array(TCP_PAYLOAD_SIZE);
+    // bytes of send_buffer sent and not acknowledged yet (they start at seq)
+    this.in_flight = 0;
+    // the receive window of the guest (no window scaling is negotiated)
+    this.peer_window = TCP_PAYLOAD_SIZE;
     this.in_active_close = false;
     this.delayed_send_fin = false;
     this.delayed_state = undefined;
@@ -1097,7 +1103,7 @@ TCPConnection.prototype.ipv4_reply = function() {
         dport: this.dport,
         winsize: this.winsize,
         ackn: this.ack,
-        seq: this.seq,
+        seq: this.seq + this.in_flight,
         ack: true
     };
     return reply;
@@ -1109,7 +1115,7 @@ TCPConnection.prototype.packet_reply = function(packet, tcp_options) {
         dport: packet.tcp.sport,
         winsize: packet.tcp.winsize,
         ackn: this.ack,
-        seq: this.seq
+        seq: this.seq + this.in_flight
     };
     if(tcp_options) {
         for(const opt in tcp_options) {
@@ -1139,8 +1145,12 @@ TCPConnection.prototype.connect = function() {
         dport: this.dport,
         seq: 1337,
         ackn: 0,
-        winsize: 0,
+        winsize: this.winsize,
         syn: true,
+        // without it the guest sends segments of 536 bytes (RFC 9293 default)
+        options: {
+            mss: (this.mtu - TCP_HEADER_SIZE - IPV4_HEADER_SIZE)
+        }
     };
     this.net.receive(make_packet(this.net.eth_encoder_buf, reply));
 };
@@ -1153,6 +1163,7 @@ TCPConnection.prototype.accept = function(packet=undefined) {
     this.ack = packet.tcp.seq + 1;
     this.start_seq = packet.tcp.seq;
     this.winsize = packet.tcp.winsize;
+    this.peer_window = packet.tcp.winsize;
 
     let reply = this.ipv4_reply();
     reply.tcp = {
@@ -1174,6 +1185,7 @@ TCPConnection.prototype.accept = function(packet=undefined) {
 
 TCPConnection.prototype.process = function(packet) {
     this.last = packet;
+    this.peer_window = packet.tcp.winsize;
     if(this.state === TCP_STATE_CLOSED) {
         // dbg_log(`TCP[${this.tuple}]: WARNING: connection already closed, packet dropped`, LOG_FETCH);
         const reply = this.packet_reply(packet, {rst: true});
@@ -1246,7 +1258,7 @@ TCPConnection.prototype.process = function(packet) {
             this.last_received_ackn = packet.tcp.ackn;
             this.send_buffer.remove(n_ack);
             this.seq += n_ack;
-            this.pending = false;
+            this.in_flight = Math.max(0, this.in_flight - n_ack);
 
             if(this.delayed_send_fin && !this.send_buffer.length) {
                 // dbg_log(`TCP[${this.tuple}]: sending delayed FIN from active close in state "${this.state}", next "${this.delayed_state}"`, LOG_FETCH);
@@ -1369,7 +1381,7 @@ TCPConnection.prototype.close = function() {
             return;
         }
 
-        if(this.send_buffer.length || this.pending) {
+        if(this.send_buffer.length || this.in_flight) {
             // dbg_log(`TCP[${this.tuple}]: active close, delaying FIN in state "${this.state}", delayed next "${next_state}"`, LOG_FETCH);
             this.delayed_send_fin = true;
             this.delayed_state = next_state;
@@ -1403,15 +1415,20 @@ TCPConnection.prototype.release = function() {
     }
 };
 
+// pump sends what the receive window of the guest takes, not one segment per
+// acknowledgement: the guest acknowledges every second segment or after a
+// delay, and a segment at a time made uploads to the guest wait for that.
+// The link to the guest loses nothing, so there is no retransmission.
 TCPConnection.prototype.pump = function() {
-    if(this.send_buffer.length && !this.pending) {
+    const limit = Math.min(this.send_buffer.length, this.peer_window);
+    while(this.in_flight < limit) {
         const data = this.send_chunk_buf;
-        const n_ready = this.send_buffer.peek(data);
+        const n_ready = this.send_buffer.peek(data.subarray(0, limit - this.in_flight), this.in_flight);
         const reply = this.ipv4_reply();
-        reply.tcp.psh = true;
+        reply.tcp.psh = this.in_flight + n_ready === this.send_buffer.length;
         reply.tcp_data = data.subarray(0, n_ready);
         this.net.receive(make_packet(this.net.eth_encoder_buf, reply));
-        this.pending = true;
+        this.in_flight += n_ready;
     }
 };
 
