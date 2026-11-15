@@ -257,7 +257,13 @@ function handle_fake_tcp(packet, adapter)
     const tuple = `${packet.ipv4.src.join(".")}:${packet.tcp.sport}:${packet.ipv4.dest.join(".")}:${packet.tcp.dport}`;
 
     if(packet.tcp.syn && !packet.tcp.ack) {
-        if(adapter.tcp_conn[tuple]) {
+        const old = adapter.tcp_conn[tuple];
+        if(old && old.pending) {
+            // a retransmitted SYN of a connection that waits for accept()
+            // or reset() of the embedder
+            return;
+        }
+        if(old) {
             dbg_log("SYN to already opened port", LOG_FETCH);
             delete adapter.tcp_conn[tuple];
         }
@@ -275,6 +281,15 @@ function handle_fake_tcp(packet, adapter)
         conn.hdest = new Uint8Array(packet.eth.src);
         conn.dport = packet.tcp.sport;
         conn.pdest = new Uint8Array(packet.ipv4.src);
+
+        // The embedder may take the connection (claim_tcp returns true): it
+        // answers the SYN later with conn.accept() or conn.reset(), for
+        // example once it reached the destination itself.
+        if(adapter.claim_tcp && adapter.claim_tcp(conn, packet)) {
+            conn.pending = true;
+            adapter.tcp_conn[tuple] = conn;
+            return;
+        }
 
         adapter.bus.pair.send("tcp-connection", conn);
 
@@ -315,9 +330,11 @@ function handle_fake_dns_static(packet, adapter)
 {
     let reply = {};
     reply.eth = { ethertype: ETHERTYPE_IPV4, src: adapter.router_mac, dest: packet.eth.src };
+    // from the address that was asked: glibc and musl drop answers from
+    // another address than the name server
     reply.ipv4 = {
         proto: IPV4_PROTO_UDP,
-        src: adapter.router_ip,
+        src: packet.ipv4.dest,
         dest: packet.ipv4.src,
     };
     reply.udp = { sport: 53, dport: packet.udp.sport };
@@ -362,21 +379,25 @@ function handle_fake_dns_doh(packet, adapter)
         headers: [["content-type", "application/dns-message"]],
         body: packet.udp.data
     };
+    const eth_dest = new Uint8Array(packet.eth.src);
+    const src = new Uint8Array(packet.ipv4.dest);
+    const dest = new Uint8Array(packet.ipv4.src);
+    const dport = packet.udp.sport;
     fetch(fetch_url, fetch_opts).then(async (resp) => {
         const reply = {
             eth: {
                 ethertype: ETHERTYPE_IPV4,
                 src: adapter.router_mac,
-                dest: packet.eth.src
+                dest: eth_dest
             },
             ipv4: {
                 proto: IPV4_PROTO_UDP,
-                src: adapter.router_ip,
-                dest: packet.ipv4.src
+                src,
+                dest
             },
             udp: {
                 sport: 53,
-                dport: packet.udp.sport,
+                dport,
                 data: new Uint8Array(await resp.arrayBuffer())
             }
         };
@@ -385,8 +406,34 @@ function handle_fake_dns_doh(packet, adapter)
     return true;
 }
 
+// dns_resolver of the embedder answers a query itself: it returns a promise
+// of the DNS message of the answer, or undefined for the default handling.
+function handle_fake_dns_resolver(packet, adapter)
+{
+    const answer = adapter.dns_resolver(packet.udp.data.slice());
+    if(!answer) {
+        return false;
+    }
+    const eth_dest = new Uint8Array(packet.eth.src);
+    const src = new Uint8Array(packet.ipv4.dest);
+    const dest = new Uint8Array(packet.ipv4.src);
+    const dport = packet.udp.sport;
+    answer.then((data) => {
+        if(!data) return;
+        adapter.receive(make_packet(adapter.eth_encoder_buf, {
+            eth: { ethertype: ETHERTYPE_IPV4, src: adapter.router_mac, dest: eth_dest },
+            ipv4: { proto: IPV4_PROTO_UDP, src, dest },
+            udp: { sport: 53, dport, data },
+        }));
+    });
+    return true;
+}
+
 function handle_fake_dns(packet, adapter)
 {
+    if(adapter.dns_resolver && handle_fake_dns_resolver(packet, adapter)) {
+        return true;
+    }
     if(adapter.dns_method === "static") {
         return handle_fake_dns_static(packet, adapter);
     }
@@ -1021,10 +1068,16 @@ function write_tcp(spec, out) {
     return total_length;
 }
 
-export function fake_tcp_connect(dport, adapter)
+/**
+ * @param {number} dport
+ * @param {*} adapter
+ * @param {Uint8Array=} src_ip the source address (the router by default)
+ */
+export function fake_tcp_connect(dport, adapter, src_ip)
 {
+    src_ip = src_ip || adapter.router_ip;
     const vm_ip_str = adapter.vm_ip.join(".");
-    const router_ip_str = adapter.router_ip.join(".");
+    const router_ip_str = src_ip.join(".");
     const sport_0 = (Math.random() * TCP_DYNAMIC_PORT_RANGE) | 0;
     let sport, tuple, sport_i = 0;
     do {
@@ -1039,7 +1092,7 @@ export function fake_tcp_connect(dport, adapter)
 
     conn.tuple = tuple;
     conn.hsrc = adapter.router_mac;
-    conn.psrc = adapter.router_ip;
+    conn.psrc = src_ip;
     conn.sport = sport;
     conn.hdest = adapter.vm_mac;
     conn.dport = dport;
@@ -1158,6 +1211,7 @@ TCPConnection.prototype.connect = function() {
 
 TCPConnection.prototype.accept = function(packet=undefined) {
     packet = packet || this.last;
+    this.pending = false;
     this.net.tcp_conn[this.tuple] = this;
     this.seq = 1338;
     this.ack = packet.tcp.seq + 1;
@@ -1181,6 +1235,19 @@ TCPConnection.prototype.accept = function(packet=undefined) {
     // dbg_log(`TCP[${this.tuple}]: accept(): sending SYN+ACK in state "${this.state}", next "${TCP_STATE_ESTABLISHED}"`, LOG_FETCH);
     this.state = TCP_STATE_ESTABLISHED;
     this.net.receive(make_packet(this.net.eth_encoder_buf, reply));
+};
+
+// reset refuses a connection that the guest opened (RST), or aborts one.
+TCPConnection.prototype.reset = function() {
+    const reply = this.ipv4_reply();
+    if(this.state === TCP_STATE_SYN_RECEIVED) {
+        reply.tcp.seq = 0;
+        reply.tcp.ackn = this.last.tcp.seq + 1;
+    }
+    reply.tcp.rst = true;
+    this.pending = false;
+    this.net.receive(make_packet(this.net.eth_encoder_buf, reply));
+    this.release();
 };
 
 TCPConnection.prototype.process = function(packet) {
@@ -1281,7 +1348,12 @@ TCPConnection.prototype.process = function(packet) {
     }
 
     if(packet.tcp.fin) {
-        if(this.ack !== packet.tcp.seq) {
+        if(packet.tcp_data.length && this.ack === packet.tcp.seq) {
+            // the last data can come with the FIN
+            this.ack += packet.tcp_data.length;
+            this.emit("data", packet.tcp_data);
+        }
+        if(this.ack !== packet.tcp.seq + packet.tcp_data.length) {
             dbg_log(`TCP[${this.tuple}]: WARNING: closing connection in state "${this.state}" with invalid seq (${this.ack} != ${packet.tcp.seq})`, LOG_FETCH);
         }
         ++this.ack; // FIN increases seqnr
@@ -1293,6 +1365,9 @@ TCPConnection.prototype.process = function(packet) {
             this.on_shutdown();
         }
         else if(this.state === TCP_STATE_FIN_WAIT_1) {
+            // the guest closed its side after us: tell the listeners too
+            // (emit, not on_shutdown, which wisp_network maps to a close)
+            this.emit("shutdown");
             if(packet.tcp.ack) {
                 // dbg_log(`TCP[${this.tuple}]: received ACK+FIN in state "${this.state}"`, LOG_FETCH);
                 this.release();
@@ -1305,6 +1380,7 @@ TCPConnection.prototype.process = function(packet) {
         }
         else if(this.state === TCP_STATE_FIN_WAIT_2) {
             // dbg_log(`TCP[${this.tuple}]: received FIN in state "${this.state}"`, LOG_FETCH);
+            this.emit("shutdown");
             this.release();
             reply.tcp.ack = true;
         }
@@ -1444,8 +1520,9 @@ function arp_whohas(packet, adapter) {
     }
 
     if(packet_subnet === router_subnet) {
-        // Ignore the DHCP client area
-        if(packet.arp.tpa[3] > 99) return;
+        // Ignore the DHCP client area, unless the VM has its address
+        // already (then the router answers for the rest of the subnet)
+        if(adapter.arp_subnet ? iptolong(packet.arp.tpa) === iptolong(adapter.vm_ip) : packet.arp.tpa[3] > 99) return;
     }
 
     // Reply to ARP Whohas

@@ -493,6 +493,20 @@ connections into the guest with `network_adapter.connect(port)`. `net` of
   nginx) 17-21 -> 59-72 MB/s, an upload over `kubectl exec -i` 0.6 -> 5 MB/s.
 - A new connection with one short exchange is ~5 ms, nearly all of it the fork
   and exec of the server process in the guest (0.6M instructions).
+- Hooks for an embedder that routes the traffic of the guest itself
+  (tabernetes: pod to pod, Services, cluster DNS), all off unless set on the
+  adapter: `claim_tcp(conn, packet)` takes a connection that the guest opens
+  (return true; answer the SYN later with `conn.accept()` or `conn.reset()`,
+  a retransmitted SYN is dropped meanwhile); `dns_resolver(query)` answers a
+  DNS query (return a promise of the answer, or undefined for the default);
+  `arp_subnet` answers ARP for the whole subnet except the address of the VM
+  (else the router ignores .100 and above, the DHCP area);
+  `connect(port, src_ip)` opens a connection from another address than the
+  router. DNS answers now come from the address that was asked: glibc and
+  musl drop answers from another address than their name server. A FIN of
+  the guest after the adapter closed its side emits "shutdown" too, and data
+  that comes with a FIN is delivered: before, a half-closed connection never
+  learned that the guest was done, and the last data was lost.
 
 ## Instruction set extensions: what pays (measured 2026-11-13)
 
@@ -638,5 +652,8 @@ connections into the guest with `network_adapter.connect(port)`. `net` of
   `connect()`, checksum and TSO offload of virtio-net for the adapters that
   end TCP in JavaScript, and a send window instead of one segment per ACK.
   Download from a pod 11 -> 60 MB/s, upload 11 -> 27 MB/s (Node.js).
+- Network hooks for embedders (2026-11-15, see the section above):
+  `claim_tcp`, `dns_resolver`, `arp_subnet`, `connect(port, src_ip)`,
+  `TCPConnection.reset()`; DNS answers from the asked address.
 
 Work in progress lives on `wip/*` and `codex/*` branches.

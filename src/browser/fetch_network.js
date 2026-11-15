@@ -74,9 +74,13 @@ FetchNetworkAdapter.prototype.destroy = function()
 {
 };
 
-FetchNetworkAdapter.prototype.connect = function(port)
+/**
+ * @param {number} port
+ * @param {Uint8Array=} src_ip
+ */
+FetchNetworkAdapter.prototype.connect = function(port, src_ip)
 {
-    return fake_tcp_connect(port, this);
+    return fake_tcp_connect(port, this, src_ip);
 };
 
 FetchNetworkAdapter.prototype.tcp_probe = function(port)
