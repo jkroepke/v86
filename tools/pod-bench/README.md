@@ -20,6 +20,14 @@ image from a 9p root file system (like `web/src/vmworker.js` in tabernetes).
 | goapp  | access-log-exporter   | HTTP on 4040, then 20 scrapes of /metrics | a static Go binary (386): runtime start, GC, int 0x80 system calls |
 | spring | see below             | HTTP answer on port 80       | a JVM (C1 JIT code in the guest), ~100 s, jumps between pages |
 | loop   | `alpine`              | with `STEADY=1` only         | one shell process: a shell loop, awk, gzip, again and again |
+| net    | `alpine`              | after the network tests      | the network adapter (fake_network.js, virtio-net): see below |
+
+`net` runs busybox `nc` servers in the pod and measures, over the network adapter like
+`kubectl port-forward` of tabernetes: a new connection with one short echo (`request`),
+round trips of 64 bytes on one connection (`echo`), a download from the pod (`down`), an
+upload to it (`up`), and the pod as a client of the fetch adapter: `wget` of a local HTTP
+server (`fetch get`) and a POST to it (`post`). Each transfer is `NET_KB` KiB (default
+4096) and is checked with md5. `NET_REQS=n` sets the number of requests and round trips.
 
 `spring` needs `data/spring.tar` (flat `docker export` of a linux/386 image
 with a 32-bit OpenJDK 21 and a Spring Boot app) and `data/spring.json`

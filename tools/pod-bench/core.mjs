@@ -103,7 +103,12 @@ const confs = () => ({
   glibc: ["nginx", { args: ["/bin/sh", "-c", O.script || GLIBC_SCRIPT], env: [PATH], cwd: "/" }],
   // steady state: one process runs on and prints "tick" after each piece of work
   loop: ["alpine", { args: ["/bin/sh", "-c", O.script || LOOP_SCRIPT], env: [PATH], cwd: "/" }],
+  net: ["alpine", { args: ["/bin/sh", "-c", NET_SCRIPT], env: [PATH], cwd: "/" }],
 });
+// net: the network adapter of v86 (fake_network.js) against busybox: httpd for small and
+// large answers, an echo server and a sink for uploads
+const NET_SCRIPT = "mkdir -p /w; echo hi > /w/s; dd if=/dev/urandom of=/w/big bs=1024 count=" + (ENV.NET_KB || 4096) + " 2>/dev/null; md5sum /w/big; " +
+  "nc -lk -p 80 -e cat /w/big & nc -lk -p 7000 -e cat & nc -lk -p 9000 -e sh -c 'md5sum >&2' & nc -lk -p 7001 -e sh & sleep 0.5; echo netready; while :; do sleep 1000; done";
 // steady state (STEADY=1): what an application costs per request after its warm-up
 const HTTP = { nginx: [80, "/", "Welcome to nginx"], goapp: [4040, "/metrics", "go_goroutines"], spring: [80, "/", "ello"] };
 
@@ -187,6 +192,90 @@ async function steady(e, wl, con, r, t0, cpu) {
   };
   await O.hook?.(O.round, "measured");
 }
+// net: latency and throughput over the network adapter, like port-forward of tabernetes
+async function net(e, con, r, cpu) {
+  await until("netready", () => con.includes("netready"));
+  const md5 = con.find((l) => l.endsWith("/w/big")).split(" ")[0];
+  const crypto = await import("node:crypto");
+  const nreq = Number(ENV.NET_REQS || 50);
+  const meas = async (f) => {
+    const c0 = O.cpu?.() ?? 0, i0 = cpu.instruction_counter[0], t = performance.now();
+    const x = await f();
+    return { ms: performance.now() - t, cpu: (O.cpu?.() ?? 0) - c0, minstr: ((cpu.instruction_counter[0] - i0) >>> 0) / 1e6, x };
+  };
+  // a request on a new connection each: connect, GET of 3 bytes, close
+  const echoOnce = (e) => new Promise((resolve) => {
+    const c = e.network_adapter.connect(7000); let got = "";
+    c.on("connect", () => c.write(new TextEncoder().encode("hi\n")));
+    c.on("data", (d) => { got += new TextDecoder().decode(d); if (got.length >= 3) { c.close(); resolve(got); } });
+    c.on("close", () => resolve(got)); setTimeout(() => resolve(null), 5000);
+  });
+  for (let k = 0; k < 5; k++) await echoOnce(e);
+  const lat = [];
+  const q = await meas(async () => { for (let k = 0; k < nreq; k++) { const t = performance.now(); const m = await echoOnce(e); if (m !== "hi\n") throw new Error("bad echo " + m); lat.push(performance.now() - t); } });
+  r.req = { p50: pct(lat, 0.5), p90: pct(lat, 0.9), cpu: q.cpu / nreq, minstr: q.minstr / nreq };
+  // round trips of 64 bytes on one connection (echo)
+  const echo = await new Promise((resolve, reject) => {
+    const c = e.network_adapter.connect(7000), msg = new Uint8Array(64).fill(65), rt = [];
+    let got = 0, t, n = 0, c0, i0;
+    const send = () => { t = performance.now(); got = 0; c.write(msg); };
+    c.on("connect", () => { c0 = O.cpu?.() ?? 0; i0 = cpu.instruction_counter[0]; send(); });
+    c.on("data", (d) => { got += d.length; if (got < 64) return; rt.push(performance.now() - t); if (++n < nreq * 4) send(); else { c.close(); resolve({ p50: pct(rt.slice(5), 0.5), p90: pct(rt.slice(5), 0.9), cpu: ((O.cpu?.() ?? 0) - c0) / n, minstr: ((cpu.instruction_counter[0] - i0) >>> 0) / 1e6 / n }); } });
+    c.on("close", () => reject(new Error("echo closed")));
+    setTimeout(() => reject(new Error("echo timeout")), 60000);
+  });
+  r.echo = echo;
+  // guest -> host: GET of the large file
+  const kb = Number(ENV.NET_KB || 4096);
+  const down = await meas(() => new Promise((resolve, reject) => {
+    const c = e.network_adapter.connect(80), parts = [];
+    c.on("data", (d) => parts.push(d.slice()));
+    const fin = () => {
+      const body = Buffer.concat(parts);
+      const h = crypto.createHash("md5").update(body).digest("hex");
+      if (h !== md5) reject(new Error(`download: md5 ${h} != ${md5}, ${body.length} bytes`)); else resolve(body.length);
+    };
+    c.on("shutdown", () => { c.close(); fin(); }); c.on("close", fin);
+    setTimeout(() => reject(new Error("download timeout")), 600000);
+  }));
+  r.down = { mbps: kb / 1024 / (down.ms / 1000), ms: down.ms, cpu: down.cpu, minstr: down.minstr };
+  // host -> guest: the same bytes to nc | md5sum
+  const big = new Uint8Array(kb * 1024); crypto.randomFillSync(big);
+  const want = crypto.createHash("md5").update(big).digest("hex");
+  const n0 = con.length;
+  const up = await meas(() => new Promise((resolve, reject) => {
+    const c = e.network_adapter.connect(9000);
+    c.on("connect", () => { for (let o = 0; o < big.length; o += 65536) c.write(big.subarray(o, o + 65536)); c.close(); });
+    const iv = setInterval(() => { const l = con.slice(n0).find((x) => x.endsWith(" -")); if (l) { clearInterval(iv); l.startsWith(want) ? resolve() : reject(new Error("upload md5 " + l)); } }, 1);
+    setTimeout(() => reject(new Error("upload timeout")), 600000);
+  }));
+  // the pod as a client of the fetch adapter: GET and POST through fetch() to a local server
+  const http = await import("node:http");
+  const srv = http.createServer((req, res) => {
+    if (req.method === "POST") { const h = crypto.createHash("md5"); let n = 0; req.on("data", (d) => { h.update(d); n += d.length; }); req.on("end", () => res.end(h.digest("hex") + " " + n + " " + req.headers["content-length"] + "\n")); }
+    else res.end(big);
+  });
+  await new Promise((r) => srv.listen(0, "127.0.0.1", r));
+  const sport = srv.address().port;
+  const shell = (cmd) => new Promise((resolve, reject) => {
+    const c = e.network_adapter.connect(7001); let out = "";
+    c.on("connect", () => { c.write(new TextEncoder().encode(cmd + "; exit\n")); });
+    c.on("data", (d) => { out += new TextDecoder().decode(d); });
+    const fin = () => resolve(out.trim());
+    c.on("shutdown", () => { c.close(); fin(); }); c.on("close", fin);
+    setTimeout(() => reject(new Error("shell timeout: " + cmd)), 600000);
+  });
+  const fget = await meas(() => shell(`wget -q -O - http://${sport}.external/big | md5sum`));
+  if (!fget.x.startsWith(want)) throw new Error("fetch GET md5 " + fget.x);
+  r.fget = { mbps: kb / 1024 / (fget.ms / 1000), ms: fget.ms, cpu: fget.cpu, minstr: fget.minstr };
+  // busybox wget posts the file as a C string: no NUL bytes
+  const pmd5 = (await shell(`base64 /w/big | head -c ${kb * 1024} > /w/post; md5sum /w/post`)).split(" ")[0];
+  const fpost = await meas(() => shell(`wget -q -O - --post-file /w/post http://${sport}.external/post`));
+  if (!fpost.x.startsWith(pmd5)) throw new Error("fetch POST md5 " + fpost.x + " != " + pmd5);
+  r.fpost = { mbps: kb / 1024 / (fpost.ms / 1000), ms: fpost.ms, cpu: fpost.cpu, minstr: fpost.minstr };
+  srv.close();
+  r.upload = { mbps: kb / 1024 / (up.ms / 1000), ms: up.ms, cpu: up.cpu, minstr: up.minstr };
+}
 const pct = (a, p) => a.slice().sort((x, y) => x - y)[Math.min(a.length - 1, Math.floor(a.length * p))];
 
 async function pod(state, wl, rec) {
@@ -218,7 +307,9 @@ async function pod(state, wl, rec) {
   await until("started", () => control.includes("started") || control.some((l) => l.startsWith("exit")));
   const r = { ...r0, started: performance.now() - t0, restore: restoreMs };
   try {
-    if (O.steady) {
+    if (wl === "net") {
+      await net(e, con, r, cpu);
+    } else if (O.steady) {
       await steady(e, wl, con, r, t0, cpu);
     } else if (wl === "nginx" || wl === "spring" || wl === "goapp") {
       const port = wl === "goapp" ? 4040 : 80;
@@ -345,6 +436,10 @@ export async function run(o) {
     r.pcpu = (o.pcpu?.() ?? 0) - p0;
     await o.hook?.(i, "end");
     res.push(r);
+    if (r.req) {
+      const f = (x) => x.toFixed(2);
+      log(`net ${i}: request p50 ${f(r.req.p50)} p90 ${f(r.req.p90)} ms cpu ${f(r.req.cpu)} ms ${f(r.req.minstr)}M | echo p50 ${f(r.echo.p50)} p90 ${f(r.echo.p90)} ms cpu ${f(r.echo.cpu)} ms ${(r.echo.minstr*1000).toFixed(0)}k | down ${f(r.down.mbps)} MB/s cpu ${r.down.cpu.toFixed(0)} ms ${r.down.minstr.toFixed(0)}M | up ${f(r.upload.mbps)} MB/s cpu ${r.upload.cpu.toFixed(0)} ms ${r.upload.minstr.toFixed(0)}M | fetch get ${f(r.fget.mbps)} MB/s ${r.fget.minstr.toFixed(0)}M post ${f(r.fpost.mbps)} MB/s ${r.fpost.minstr.toFixed(0)}M`);
+    }
     if (r.ss) {
       const s = r.ss;
       log(`${o.workload} steady ${i}: ${s.n} requests after ${O.warm ?? 20}, up ${r.up.toFixed(0)} ms: ${s.ms.toFixed(2)} ms/req (${s.rps.toFixed(1)}/s), cpu ${s.cpu.toFixed(2)} ms/req${o.pcpu ? `, process cpu ${s.pcpu.toFixed(2)} ms/req` : ""}, ${s.minstr.toFixed(3)}M instr/req, latency p50 ${s.p50.toFixed(2)} p90 ${s.p90.toFixed(2)} p99 ${s.p99.toFixed(2)} max ${s.max.toFixed(2)} ms`);
