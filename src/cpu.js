@@ -1836,8 +1836,14 @@ export function jit_page_hash(mem8, page)
     return [h1 >>> 0, h2 >>> 0];
 }
 
-CPU.prototype.jit_record_start = function()
+/** @param {boolean=} all */
+CPU.prototype.jit_record_start = function(all)
 {
+    if(all)
+    {
+        this.jit_record_seq = new Map();
+        this.wm.exports["set_jit_config"](11, 1);
+    }
     this.jit_record = new Map();
 };
 
@@ -1862,6 +1868,7 @@ CPU.prototype.jit_export = function(kernel_only, limit)
     if(limit) list = list.slice(0, limit);
     const parts = [];
     let size = 16;
+    const seen = new Set();
     for(const { i, bytes } of list)
     {
         const page = get(i, 0);
@@ -1871,7 +1878,39 @@ CPU.prototype.jit_export = function(kernel_only, limit)
         head.set([page, get(i, 1), get(i, 2), h1, h2, k, bytes.length]);
         for(let j = 0; j < k; j++) head[7 + j] = get(i, 5 + 2 * j) | get(i, 6 + 2 * j) << 16;
         parts.push(head, bytes);
+        seen.add(h1 + "," + h2);
         size += head.byteLength + (bytes.length + 3 & ~3);
+    }
+    if(!kernel_only && this.jit_record_seq)
+    {
+        // modules that were dropped during the run (their page was written or freed)
+        const len = ex["jit_evicted_len"]();
+        const best = new Map();
+        for(let p = 0; p < len; )
+        {
+            const r = [];
+            for(let j = 0; j < 7; j++) r.push(ex["jit_evicted_get"](p + j) >>> 0);
+            const k = r[6];
+            const entries = [];
+            for(let j = 0; j < k; j++) entries.push(ex["jit_evicted_get"](p + 7 + j) >>> 0);
+            p += 7 + k;
+            const key = r[3] + "," + r[4];
+            const bytes = this.jit_record_seq.get(r[5]);
+            if(!bytes || seen.has(key)) continue;
+            const old = best.get(key);
+            if(!old || old.entries.length < k) best.set(key, { r, entries, bytes });
+        }
+        const used = new Set(parts.filter((_, j) => j % 2 === 0).map(h => h[1]));
+        for(const { r, entries, bytes } of best.values())
+        {
+            if(used.has(r[1])) continue;
+            used.add(r[1]);
+            const head = new Uint32Array(7 + entries.length);
+            head.set([r[0], r[1], r[2], r[3], r[4], entries.length, bytes.length]);
+            head.set(entries, 7);
+            parts.push(head, bytes);
+            size += head.byteLength + (bytes.length + 3 & ~3);
+        }
     }
     const out = new Uint8Array(size);
     new Uint32Array(out.buffer, 0, 4).set([JIT_EXPORT_MAGIC, JIT_EXPORT_VERSION, ex["jit_layout_id"](), parts.length / 2]);
@@ -1980,6 +2019,63 @@ CPU.prototype.jit_import = function(prepared)
     return n;
 };
 
+/**
+ * Content-addressed modules: like jit_import, but a module is installed when the interpreter
+ * first enters any physical page with the same bytes (shared libraries at any address)
+ */
+CPU.prototype.jit_library = function(prepared)
+{
+    const ex = this.wm.exports;
+    if(prepared["layout"] !== ex["jit_layout_id"]() >>> 0) return 0;
+    this.jit_lib = new Map();
+    this.jit_lib_pending = [];
+    this.jit_lib_f = new Map();
+    this["jit_lib_stats"] = { "probes": 0, "hits": 0, "installed": 0, "ms": 0 };
+    for(const m of prepared["modules"])
+    {
+        if(!ex["jit_reserve_index"](m["index"])) continue;
+        this.jit_lib.set(m["hash"][0] + "," + m["hash"][1], m);
+    }
+    ex["set_jit_config"](10, 1);
+    return this.jit_lib.size;
+};
+
+CPU.prototype.jit_probe_page = function(page)
+{
+    if(this.jit_lib_pending) this.jit_lib_pending.push(page);
+};
+
+CPU.prototype.jit_lib_flush = function()
+{
+    const t0 = performance.now();
+    const ex = this.wm.exports;
+    const pending = this.jit_lib_pending;
+    this.jit_lib_pending = [];
+    const st = this["jit_lib_stats"];
+    for(const page of pending)
+    {
+        if((page + 1) << 12 > this.mem8.length || (page + 1) << 12 <= 0) continue;
+        st["probes"]++;
+        const [h1, h2] = jit_page_hash(this.mem8, page);
+        const m = this.jit_lib.get(h1 + "," + h2);
+        if(!m) continue;
+        st["hits"]++;
+        let f = this.jit_lib_f.get(m);
+        if(!f) this.jit_lib_f.set(m, f = new WebAssembly.Instance(m["module"], { "e": this.jit_imports }).exports["f"]);
+        ex["jit_release_index"](m["index"]);
+        const entries = m["entries"];
+        for(let j = 0; j < entries.length; j++) ex["jit_import_entry"](entries[j] & 0xFFFF, entries[j] >>> 16);
+        if(!ex["jit_import_page"](page, m["index"], m["flags"]))
+        {
+            if(ex["jit_reserve_index"](m["index"]) && (this.jit_lib_retry = (this.jit_lib_retry || 0) + 1) < 10000) this.jit_lib_pending.push(page);
+            continue;
+        }
+        this.wm.wasm_table.set(m["index"] + WASM_TABLE_OFFSET, f);
+        st["installed"]++;
+    }
+    st["ms"] += performance.now() - t0;
+};
+
 CPU.prototype.codegen_finalize = function(wasm_table_index, start, state_flags, ptr, len)
 {
     ptr >>>= 0;
@@ -1992,6 +2088,7 @@ CPU.prototype.codegen_finalize = function(wasm_table_index, start, state_flags, 
     if(this.jit_record)
     {
         this.jit_record.set(wasm_table_index, code.slice());
+        if(this.jit_record_seq) this.jit_record_seq.set(this.wm.exports["jit_module_seq"](wasm_table_index), code.slice());
     }
 
     if(DEBUG)
@@ -2034,6 +2131,15 @@ CPU.prototype.codegen_finalize = function(wasm_table_index, start, state_flags, 
     }
 
     const SYNC_COMPILATION = false;
+
+    if(this.jit_record_seq)
+    {
+        // recording everything: compile at once, finish after main_loop (the JIT state is locked now)
+        const f = new WebAssembly.Instance(new WebAssembly.Module(code), { "e": this.jit_imports }).exports["f"];
+        this.wm.wasm_table.set(wasm_table_index + WASM_TABLE_OFFSET, f);
+        (this.jit_lib_pending_finish = this.jit_lib_pending_finish || []).push([wasm_table_index, start, state_flags]);
+        return;
+    }
 
     if(SYNC_COMPILATION)
     {

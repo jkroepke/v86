@@ -53,6 +53,13 @@ v86.prototype.do_tick = function()
     this.idle = false;
     this.cpu.memory_fresh = false;
     const t = this.cpu.main_loop();
+    if(this.cpu.jit_lib_pending && this.cpu.jit_lib_pending.length) this.cpu.jit_lib_flush();
+    if(this.cpu.jit_lib_pending_finish && this.cpu.jit_lib_pending_finish.length)
+    {
+        const l = this.cpu.jit_lib_pending_finish;
+        this.cpu.jit_lib_pending_finish = [];
+        for(const [i, s, f] of l) this.cpu.codegen_finalize_finished(i, s, f);
+    }
 
     this.next_tick(t);
 };

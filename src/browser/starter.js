@@ -105,6 +105,7 @@ export function V86(options)
             cpu.codegen_finalize(wasm_table_index, start, state_flags, ptr, len);
         },
         "jit_clear_func": (wasm_table_index) => cpu.jit_clear_func(wasm_table_index),
+        "jit_probe_page": (page) => cpu.jit_probe_page(page),
         "jit_clear_all_funcs": () => cpu.jit_clear_all_funcs(),
 
         "__indirect_function_table": wasm_table,
@@ -727,7 +728,7 @@ V86.prototype.zstd_decompress_worker = async function(decompressed_size, src)
                         "mmap_read8", "mmap_read32",
                         "mmap_write8", "mmap_write16", "mmap_write32", "mmap_write64", "mmap_write128",
                         "codegen_finalize",
-                        "jit_clear_func", "jit_clear_all_funcs",
+                        "jit_clear_func", "jit_clear_all_funcs", "jit_probe_page",
                     ].map(f => [f, () => console.error("zstd worker unexpectedly called " + f)]));
 
                     env["__indirect_function_table"] = new WebAssembly.Table({ element: "anyfunc", initial: 1024 });
@@ -925,10 +926,11 @@ V86.prototype.save_state = async function()
 
 /**
  * Keep the bytes of the modules that the JIT makes, for jit_export. Call it before run.
+ * @param {boolean=} all also the modules that are dropped during the run
  */
-V86.prototype.jit_record_start = function()
+V86.prototype.jit_record_start = function(all)
 {
-    this.v86.cpu.jit_record_start();
+    this.v86.cpu.jit_record_start(all);
 };
 
 /**
@@ -947,6 +949,16 @@ V86.prototype.jit_export = function(limit)
  * Installs modules of V86.jit_prepare. Call it after restore_state and before run.
  * @return {number} the number of modules installed
  */
+V86.prototype.jit_library = function(prepared)
+{
+    return this.v86.cpu.jit_library(prepared);
+};
+
+V86.prototype.jit_export_all = function(limit)
+{
+    return this.v86.cpu.jit_export(false, limit);
+};
+
 V86.prototype.jit_import = function(prepared)
 {
     return this.v86.cpu.jit_import(prepared);

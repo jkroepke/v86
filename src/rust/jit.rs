@@ -43,6 +43,7 @@ mod unsafe_jit {
             len: u32,
         );
         pub fn jit_clear_func(wasm_table_index: WasmTableIndex);
+        pub fn jit_probe_page(page: u32);
     }
 }
 
@@ -53,6 +54,10 @@ fn codegen_finalize(
     ptr: u32,
     len: u32,
 ) {
+    unsafe {
+        FINALIZE_SEQ += 1;
+        MODULE_SEQ[wasm_table_index.to_u16() as usize] = FINALIZE_SEQ;
+    }
     unsafe { unsafe_jit::codegen_finalize(wasm_table_index, phys_addr, state_flags, ptr, len) }
 }
 
@@ -2475,6 +2480,9 @@ pub fn jit_increase_hotness_and_maybe_compile(
             cpu::tlb_set_has_code(page, true);
             marks_alloc(page);
             profiler::stat_increment(stat::RUN_INTERPRETED_NEW_PAGE);
+            if unsafe { JIT_PROBE } {
+                unsafe { unsafe_jit::jit_probe_page(page.to_u32()) }
+            }
             HashSet::default()
         });
 
@@ -2543,7 +2551,13 @@ fn free_wasm_table_index(ctx: &mut JitState, wasm_table_index: WasmTableIndex) {
     #[cfg(debug_assertions)]
     ctx.wasm_table_index_to_page.remove(&wasm_table_index);
 
-    ctx.wasm_table_index_free_list.push(wasm_table_index);
+    if unsafe { JIT_RECORD_EVICTED } {
+        // recording: reuse a freed index late, so that recorded modules keep distinct indices
+        ctx.wasm_table_index_free_list.insert(0, wasm_table_index);
+    }
+    else {
+        ctx.wasm_table_index_free_list.push(wasm_table_index);
+    }
     profiler::module_freed(wasm_table_index.to_u16());
 
     // It is not strictly necessary to clear the function, but it will fail more predictably if we
@@ -2554,6 +2568,28 @@ fn free_wasm_table_index(ctx: &mut JitState, wasm_table_index: WasmTableIndex) {
 /// Register a write in this page: Delete all present code
 fn jit_dirty_page_ctx(ctx: &mut JitState, page: Page) {
     let mut did_have_code = false;
+
+    if unsafe { JIT_RECORD_EVICTED } {
+        if let Some(info) = ctx.pages.get(&page) {
+            let (h1, h2) = page_hash(page);
+            let mut rec = vec![
+                page.to_u32(),
+                info.wasm_table_index.to_u16() as u32,
+                info.state_flags.to_u32(),
+                h1,
+                h2,
+                unsafe { MODULE_SEQ[info.wasm_table_index.to_u16() as usize] },
+                info.entry_points.len() as u32,
+            ];
+            for &(a, st) in &info.entry_points {
+                rec.push(a as u32 | (st as u32) << 16);
+            }
+            #[allow(static_mut_refs)]
+            unsafe {
+                EVICTED.extend(rec)
+            };
+        }
+    }
 
     if let Some(PageInfo {
         wasm_table_index,
@@ -2883,6 +2919,8 @@ pub unsafe fn set_jit_config(index: u32, value: u32) {
         5 => codegen::JIT_SIMD = value != 0,
         7 => JIT_COLD_BLOCKS = value != 0,
         8 => codegen::JIT_BAIL = value != 0,
+        10 => JIT_PROBE = value != 0,
+        11 => JIT_RECORD_EVICTED = value != 0,
         _ => dbg_assert!(false),
     }
 }
@@ -2967,6 +3005,61 @@ pub fn jit_export_get(i: u32, what: u32) -> u32 {
             let (a, s) = info.entry_points[((n - 5) / 2) as usize];
             if n & 1 == 1 { a as u32 } else { s as u32 }
         },
+    }
+}
+
+pub static mut FINALIZE_SEQ: u32 = 0;
+pub static mut MODULE_SEQ: [u32; WASM_TABLE_SIZE as usize] = [0; WASM_TABLE_SIZE as usize];
+pub static mut JIT_RECORD_EVICTED: bool = false;
+pub static mut EVICTED: Vec<u32> = Vec::new();
+
+// the same as jit_page_hash in cpu.js
+fn page_hash(page: Page) -> (u32, u32) {
+    let mut h1: u32 = 0x811c9dc5;
+    let mut h2: u32 = 0x9e3779b9;
+    for i in 0..1024 {
+        let w = unsafe {
+            std::ptr::read_unaligned(memory::mem8.offset((page.to_u32() << 12) as isize + i * 4) as *const u32)
+        };
+        h1 = (h1 ^ w).wrapping_mul(0x01000193);
+        h2 = (h2.wrapping_add(w)).wrapping_mul(0x85ebca6b) ^ (h2 >> 13);
+    }
+    (h1, h2)
+}
+#[no_mangle]
+#[allow(static_mut_refs)]
+pub fn jit_evicted_len() -> u32 { unsafe { EVICTED.len() as u32 } }
+#[no_mangle]
+#[allow(static_mut_refs)]
+pub fn jit_evicted_get(i: u32) -> u32 { unsafe { EVICTED[i as usize] } }
+#[no_mangle]
+pub fn jit_module_seq(wasm_table_index: u32) -> u32 { unsafe { MODULE_SEQ[wasm_table_index as usize] } }
+
+// Content-addressed modules: the embedder hears of every page that the interpreter enters
+// first (jit_probe_page) and may install a module for the same bytes (jit_import_page).
+pub static mut JIT_PROBE: bool = false;
+
+// Keeps a table index for a module that may be installed later; returns false when taken
+#[no_mangle]
+pub fn jit_reserve_index(wasm_table_index: u32) -> bool {
+    let mut ctx = get_jit_state();
+    let index = WasmTableIndex(wasm_table_index as u16);
+    match ctx.wasm_table_index_free_list.iter().position(|&w| w == index) {
+        Some(p) => {
+            ctx.wasm_table_index_free_list.swap_remove(p);
+            true
+        },
+        None => false,
+    }
+}
+#[no_mangle]
+pub fn jit_release_index(wasm_table_index: u32) {
+    let mut ctx = get_jit_state();
+    let index = WasmTableIndex(wasm_table_index as u16);
+    if !ctx.wasm_table_index_free_list.contains(&index)
+        && !ctx.pages.values().any(|i| i.wasm_table_index == index)
+    {
+        ctx.wasm_table_index_free_list.push(index);
     }
 }
 
