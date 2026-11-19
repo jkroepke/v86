@@ -1718,19 +1718,19 @@ pub fn gen_get_real_eip(ctx: &mut JitContext) {
 }
 
 pub fn gen_set_last_op1(builder: &mut WasmBuilder, source: &WasmLocal) {
-    builder.const_i32(global_pointers::last_op1 as i32);
+    builder.const_flag_addr(global_pointers::last_op1 as i32);
     builder.get_local(&source);
     builder.store_aligned_i32(0);
 }
 
 pub fn gen_set_last_result(builder: &mut WasmBuilder, source: &WasmLocal) {
-    builder.const_i32(global_pointers::last_result as i32);
+    builder.const_flag_addr(global_pointers::last_result as i32);
     builder.get_local(&source);
     builder.store_aligned_i32(0);
 }
 
 pub fn gen_clear_flags_changed_bits(builder: &mut WasmBuilder, bits_to_clear: i32) {
-    builder.const_i32(global_pointers::flags_changed as i32);
+    builder.const_flag_addr(global_pointers::flags_changed as i32);
     gen_get_flags_changed(builder);
     builder.const_i32(!bits_to_clear);
     builder.and_i32();
@@ -1745,13 +1745,22 @@ pub fn gen_set_last_op_size_and_flags_changed(
     dbg_assert!(last_op_size == OPSIZE_8 || last_op_size == OPSIZE_16 || last_op_size == OPSIZE_32);
     dbg_assert!(global_pointers::last_op_size as i32 % 8 == 0);
     dbg_assert!(global_pointers::last_op_size as i32 + 4 == global_pointers::flags_changed as i32);
+    if builder.has_flag_locals() {
+        builder.const_flag_addr(global_pointers::last_op_size as i32);
+        builder.const_i32(last_op_size);
+        builder.store_aligned_i32(0);
+        builder.const_flag_addr(global_pointers::flags_changed as i32);
+        builder.const_i32(flags_changed);
+        builder.store_aligned_i32(0);
+        return;
+    }
     builder.const_i32(global_pointers::last_op_size as i32);
     builder.const_i64(last_op_size as u32 as i64 | (flags_changed as u32 as i64) << 32);
     builder.store_aligned_i64(0);
 }
 
 pub fn gen_set_flags_bits(builder: &mut WasmBuilder, bits_to_set: i32) {
-    builder.const_i32(global_pointers::flags as i32);
+    builder.const_flag_addr(global_pointers::flags as i32);
     gen_get_flags(builder);
     builder.const_i32(bits_to_set);
     builder.or_i32();
@@ -1759,7 +1768,7 @@ pub fn gen_set_flags_bits(builder: &mut WasmBuilder, bits_to_set: i32) {
 }
 
 pub fn gen_clear_flags_bits(builder: &mut WasmBuilder, bits_to_clear: i32) {
-    builder.const_i32(global_pointers::flags as i32);
+    builder.const_flag_addr(global_pointers::flags as i32);
     gen_get_flags(builder);
     builder.const_i32(!bits_to_clear);
     builder.and_i32();
@@ -2926,6 +2935,7 @@ pub fn gen_move_registers_from_locals_to_memory(ctx: &mut JitContext) {
         ctx.builder.get_local(&ctx.register_locals[i]);
         ctx.builder.store_aligned_i32(0);
     }
+    ctx.builder.flush_flag_locals();
 }
 pub fn gen_move_registers_from_memory_to_locals(ctx: &mut JitContext) {
     if cfg!(feature = "profiler") {
@@ -2939,6 +2949,7 @@ pub fn gen_move_registers_from_memory_to_locals(ctx: &mut JitContext) {
         ctx.builder.load_aligned_i32(0);
         ctx.builder.set_local(&ctx.register_locals[i]);
     }
+    ctx.builder.reload_flag_locals();
 }
 
 pub fn gen_profiler_stat_increment(builder: &mut WasmBuilder, stat: profiler::stat) {

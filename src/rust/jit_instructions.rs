@@ -1444,13 +1444,13 @@ fn gen_add8(ctx: &mut JitContext, dest_operand: &WasmLocal, source_operand: &Loc
         is_inc: false,
     };
 
-    ctx.builder.const_i32(global_pointers::last_op1 as i32);
+    ctx.builder.const_flag_addr(global_pointers::last_op1 as i32);
     ctx.builder.get_local(dest_operand);
     ctx.builder.const_i32(0xFF);
     ctx.builder.and_i32();
     ctx.builder.store_aligned_i32(0);
 
-    ctx.builder.const_i32(global_pointers::last_result as i32);
+    ctx.builder.const_flag_addr(global_pointers::last_result as i32);
     ctx.builder.get_local(dest_operand);
     source_operand.gen_get(ctx.builder);
     ctx.builder.add_i32();
@@ -1500,13 +1500,13 @@ fn gen_sub8(ctx: &mut JitContext, dest_operand: &WasmLocal, source_operand: &Loc
         is_dec: false,
     };
 
-    ctx.builder.const_i32(global_pointers::last_op1 as i32);
+    ctx.builder.const_flag_addr(global_pointers::last_op1 as i32);
     ctx.builder.get_local(dest_operand);
     ctx.builder.const_i32(0xFF);
     ctx.builder.and_i32();
     ctx.builder.store_aligned_i32(0);
 
-    ctx.builder.const_i32(global_pointers::last_result as i32);
+    ctx.builder.const_flag_addr(global_pointers::last_result as i32);
     ctx.builder.get_local(dest_operand);
     source_operand.gen_get(ctx.builder);
     ctx.builder.sub_i32();
@@ -1555,7 +1555,7 @@ fn gen_cmp(
         opsize: size,
     };
 
-    ctx.builder.const_i32(global_pointers::last_result as i32);
+    ctx.builder.const_flag_addr(global_pointers::last_result as i32);
     if source_operand.is_zero() {
         ctx.builder.get_local(&dest_operand);
     }
@@ -1571,7 +1571,7 @@ fn gen_cmp(
     }
     ctx.builder.store_aligned_i32(0);
 
-    ctx.builder.const_i32(global_pointers::last_op1 as i32);
+    ctx.builder.const_flag_addr(global_pointers::last_op1 as i32);
     ctx.builder.get_local(&dest_operand);
     if size == OPSIZE_8 || size == OPSIZE_16 {
         ctx.builder
@@ -1626,7 +1626,7 @@ fn gen_adc32(ctx: &mut JitContext, dest_operand: &WasmLocal, source_operand: &Lo
         FLAGS_ALL & !FLAG_CARRY & !FLAG_OVERFLOW & !FLAG_ADJUST,
     );
 
-    ctx.builder.const_i32(global_pointers::flags as i32);
+    ctx.builder.const_flag_addr(global_pointers::flags as i32);
     codegen::gen_get_flags(ctx.builder);
     ctx.builder
         .const_i32(!FLAG_CARRY & !FLAG_ADJUST & !FLAG_OVERFLOW);
@@ -1725,7 +1725,7 @@ fn gen_sbb32(ctx: &mut JitContext, dest_operand: &WasmLocal, source_operand: &Lo
         FLAGS_ALL & !FLAG_CARRY & !FLAG_OVERFLOW & !FLAG_ADJUST,
     );
 
-    ctx.builder.const_i32(global_pointers::flags as i32);
+    ctx.builder.const_flag_addr(global_pointers::flags as i32);
     codegen::gen_get_flags(ctx.builder);
     ctx.builder
         .const_i32(!FLAG_CARRY & !FLAG_ADJUST & !FLAG_OVERFLOW);
@@ -1795,7 +1795,7 @@ fn gen_and8(ctx: &mut JitContext, dest_operand: &WasmLocal, source_operand: &Loc
         dest: local_to_instruction_operand(ctx, dest_operand),
     };
 
-    ctx.builder.const_i32(global_pointers::last_result as i32);
+    ctx.builder.const_flag_addr(global_pointers::last_result as i32);
     ctx.builder.get_local(dest_operand);
     source_operand.gen_get(ctx.builder);
     ctx.builder.and_i32();
@@ -1848,7 +1848,7 @@ fn gen_test(
         },
     };
 
-    ctx.builder.const_i32(global_pointers::last_result as i32);
+    ctx.builder.const_flag_addr(global_pointers::last_result as i32);
     if is_self_test {
         ctx.builder.get_local(&dest_operand);
     }
@@ -1882,7 +1882,7 @@ fn gen_or8(ctx: &mut JitContext, dest_operand: &WasmLocal, source_operand: &Loca
         dest: local_to_instruction_operand(ctx, dest_operand),
     };
 
-    ctx.builder.const_i32(global_pointers::last_result as i32);
+    ctx.builder.const_flag_addr(global_pointers::last_result as i32);
     ctx.builder.get_local(dest_operand);
     source_operand.gen_get(ctx.builder);
     ctx.builder.or_i32();
@@ -1924,7 +1924,7 @@ fn gen_xor8(ctx: &mut JitContext, dest_operand: &WasmLocal, source_operand: &Loc
         dest: local_to_instruction_operand(ctx, dest_operand),
     };
 
-    ctx.builder.const_i32(global_pointers::last_result as i32);
+    ctx.builder.const_flag_addr(global_pointers::last_result as i32);
     ctx.builder.get_local(dest_operand);
     source_operand.gen_get(ctx.builder);
     ctx.builder.xor_i32();
@@ -2122,7 +2122,7 @@ fn gen_shl32(ctx: &mut JitContext, dest_operand: &WasmLocal, source_operand: &Lo
         FLAGS_ALL & !FLAG_CARRY & !FLAG_OVERFLOW,
     );
 
-    builder.const_i32(global_pointers::flags as i32);
+    builder.const_flag_addr(global_pointers::flags as i32);
     codegen::gen_get_flags(builder);
     builder.const_i32(!(FLAG_CARRY | FLAG_OVERFLOW));
     builder.and_i32();
@@ -2176,7 +2176,7 @@ fn gen_shr32(ctx: &mut JitContext, dest_operand: &WasmLocal, source_operand: &Lo
         },
     };
 
-    builder.const_i32(global_pointers::flags as i32);
+    builder.const_flag_addr(global_pointers::flags as i32);
     codegen::gen_get_flags(builder);
     builder.const_i32(!(FLAG_CARRY | FLAG_OVERFLOW));
     builder.and_i32();
@@ -2242,7 +2242,7 @@ fn gen_sar32(ctx: &mut JitContext, dest_operand: &WasmLocal, source_operand: &Lo
         },
     };
 
-    builder.const_i32(global_pointers::flags as i32);
+    builder.const_flag_addr(global_pointers::flags as i32);
     codegen::gen_get_flags(builder);
     builder.const_i32(!(FLAG_CARRY | FLAG_OVERFLOW));
     builder.and_i32();
@@ -2289,13 +2289,13 @@ fn gen_xadd32(ctx: &mut JitContext, dest_operand: &WasmLocal, r: u32) {
 fn gen_cmpxchg32(ctx: &mut JitContext, r: u32) {
     let source = ctx.builder.set_new_local();
 
-    ctx.builder.const_i32(global_pointers::last_result as i32);
+    ctx.builder.const_flag_addr(global_pointers::last_result as i32);
     codegen::gen_get_reg32(ctx, regs::EAX);
     ctx.builder.get_local(&source);
     ctx.builder.sub_i32();
     ctx.builder.store_aligned_i32(0);
 
-    ctx.builder.const_i32(global_pointers::last_op1 as i32);
+    ctx.builder.const_flag_addr(global_pointers::last_op1 as i32);
     codegen::gen_get_reg32(ctx, regs::EAX);
     ctx.builder.store_aligned_i32(0);
     codegen::gen_set_last_op_size_and_flags_changed(ctx.builder, OPSIZE_32, FLAGS_ALL | FLAG_SUB);
@@ -2415,7 +2415,7 @@ fn gen_imul3_reg32(
         FLAGS_ALL & !1 & !FLAG_OVERFLOW,
     );
 
-    builder.const_i32(global_pointers::flags as i32);
+    builder.const_flag_addr(global_pointers::flags as i32);
     builder.get_local_i64(&result);
     builder.wrap_i64_to_i32();
     builder.extend_signed_i32_to_i64();
@@ -2486,7 +2486,7 @@ fn gen_bt(
     bit_offset: &LocalOrImmediate,
     offset_mask: u32,
 ) {
-    builder.const_i32(global_pointers::flags as i32);
+    builder.const_flag_addr(global_pointers::flags as i32);
     codegen::gen_get_flags(builder);
     builder.const_i32(!1);
     builder.and_i32();
@@ -2839,7 +2839,7 @@ pub fn instr32_3D_jit(ctx: &mut JitContext, imm32: u32) {
 }
 
 fn gen_inc(ctx: &mut JitContext, dest_operand: &WasmLocal, size: i32) {
-    ctx.builder.const_i32(global_pointers::flags as i32);
+    ctx.builder.const_flag_addr(global_pointers::flags as i32);
     codegen::gen_get_flags(ctx.builder);
     ctx.builder.const_i32(!1);
     ctx.builder.and_i32();
@@ -2847,7 +2847,7 @@ fn gen_inc(ctx: &mut JitContext, dest_operand: &WasmLocal, size: i32) {
     ctx.builder.or_i32();
     ctx.builder.store_aligned_i32(0);
 
-    ctx.builder.const_i32(global_pointers::last_op1 as i32);
+    ctx.builder.const_flag_addr(global_pointers::last_op1 as i32);
     ctx.builder.get_local(&dest_operand);
     if size == OPSIZE_8 || size == OPSIZE_16 {
         ctx.builder
@@ -2866,7 +2866,7 @@ fn gen_inc(ctx: &mut JitContext, dest_operand: &WasmLocal, size: i32) {
         ctx.builder.set_local(dest_operand);
     }
 
-    ctx.builder.const_i32(global_pointers::last_result as i32);
+    ctx.builder.const_flag_addr(global_pointers::last_result as i32);
     ctx.builder.get_local(&dest_operand);
     if size == OPSIZE_16 {
         ctx.builder.const_i32(0xFFFF);
@@ -2889,7 +2889,7 @@ fn gen_inc32(ctx: &mut JitContext, dest_operand: &WasmLocal) {
 }
 
 fn gen_dec(ctx: &mut JitContext, dest_operand: &WasmLocal, size: i32) {
-    ctx.builder.const_i32(global_pointers::flags as i32);
+    ctx.builder.const_flag_addr(global_pointers::flags as i32);
     codegen::gen_get_flags(ctx.builder);
     ctx.builder.const_i32(!1);
     ctx.builder.and_i32();
@@ -2897,7 +2897,7 @@ fn gen_dec(ctx: &mut JitContext, dest_operand: &WasmLocal, size: i32) {
     ctx.builder.or_i32();
     ctx.builder.store_aligned_i32(0);
 
-    ctx.builder.const_i32(global_pointers::last_op1 as i32);
+    ctx.builder.const_flag_addr(global_pointers::last_op1 as i32);
     ctx.builder.get_local(&dest_operand);
     if size == OPSIZE_8 || size == OPSIZE_16 {
         ctx.builder
@@ -2916,7 +2916,7 @@ fn gen_dec(ctx: &mut JitContext, dest_operand: &WasmLocal, size: i32) {
         ctx.builder.set_local(dest_operand);
     }
 
-    ctx.builder.const_i32(global_pointers::last_result as i32);
+    ctx.builder.const_flag_addr(global_pointers::last_result as i32);
     ctx.builder.get_local(&dest_operand);
     if size == OPSIZE_16 {
         ctx.builder.const_i32(0xFFFF);
@@ -2978,7 +2978,7 @@ fn gen_neg32(ctx: &mut JitContext, dest_operand: &WasmLocal) {
         is_dec: false,
     };
     let builder = &mut ctx.builder;
-    builder.const_i32(global_pointers::last_op1 as i32);
+    builder.const_flag_addr(global_pointers::last_op1 as i32);
     builder.const_i32(0);
     builder.store_aligned_i32(0);
 
@@ -4755,7 +4755,7 @@ pub fn instr_FB_jit(ctx: &mut JitContext) {
 }
 
 pub fn instr_FC_jit(ctx: &mut JitContext) {
-    ctx.builder.const_i32(global_pointers::flags as i32);
+    ctx.builder.const_flag_addr(global_pointers::flags as i32);
     codegen::gen_get_flags(ctx.builder);
     ctx.builder.const_i32(!FLAG_DIRECTION);
     ctx.builder.and_i32();
@@ -4763,7 +4763,7 @@ pub fn instr_FC_jit(ctx: &mut JitContext) {
 }
 
 pub fn instr_FD_jit(ctx: &mut JitContext) {
-    ctx.builder.const_i32(global_pointers::flags as i32);
+    ctx.builder.const_flag_addr(global_pointers::flags as i32);
     codegen::gen_get_flags(ctx.builder);
     ctx.builder.const_i32(FLAG_DIRECTION);
     ctx.builder.or_i32();
@@ -5066,7 +5066,7 @@ pub fn instr16_9D_jit(ctx: &mut JitContext) { gen_popf(ctx, false) }
 pub fn instr32_9D_jit(ctx: &mut JitContext) { gen_popf(ctx, true) }
 
 pub fn instr_9E_jit(ctx: &mut JitContext) {
-    ctx.builder.const_i32(global_pointers::flags as i32);
+    ctx.builder.const_flag_addr(global_pointers::flags as i32);
     codegen::gen_get_flags(ctx.builder);
     ctx.builder.const_i32(!0xFF);
     ctx.builder.and_i32();

@@ -1438,6 +1438,10 @@ fn jit_generate_module(
     builder.const_i32(0);
     let instruction_counter = builder.set_new_local();
 
+    if unsafe { JIT_FLAG_LOCALS } {
+        builder.enable_flag_locals();
+    }
+
     // always set before use (wasm locals start as 0)
     let bail_eip_low_bits_local = builder.alloc_local();
     let exit_label = builder.block_void();
@@ -2324,6 +2328,7 @@ fn jit_generate_module(
     for local in ctx.register_locals.drain(..) {
         ctx.builder.free_local(local);
     }
+    ctx.builder.disable_flag_locals();
     ctx.builder
         .free_local(ctx.instruction_counter.unsafe_clone());
     ctx.builder
@@ -2908,6 +2913,9 @@ pub fn enter_basic_block(phys_eip: u32, wasm_table_index: u32) {
     }
 }
 
+// the lazy flags in wasm locals during a module (see flag_locals in wasm_builder.rs)
+pub static mut JIT_FLAG_LOCALS: bool = true;
+
 #[no_mangle]
 pub unsafe fn set_jit_config(index: u32, value: u32) {
     match index {
@@ -2921,6 +2929,7 @@ pub unsafe fn set_jit_config(index: u32, value: u32) {
         8 => codegen::JIT_BAIL = value != 0,
         10 => JIT_PROBE = value != 0,
         11 => JIT_RECORD_EVICTED = value != 0,
+        12 => JIT_FLAG_LOCALS = value != 0,
         _ => dbg_assert!(false),
     }
 }
@@ -2936,6 +2945,7 @@ pub unsafe fn get_jit_config(index: u32) -> u32 {
         5 => codegen::JIT_SIMD as u32,
         7 => JIT_COLD_BLOCKS as u32,
         8 => codegen::JIT_BAIL as u32,
+        12 => JIT_FLAG_LOCALS as u32,
         _ => 0,
     }
 }

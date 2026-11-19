@@ -92,7 +92,16 @@ pub struct WasmBuilder {
     free_locals_i64: Vec<WasmLocalI64>,
     local_count: u8,
     pub arg_local_initial_state: WasmLocal,
+
+    // The lazy flags (last_op_size, flags_changed, last_op1, last_result, flags) in locals while
+    // a JIT module is generated: written to memory only before calls and at exits, so that V8
+    // drops the writes that a later instruction overwrites (flush_flag_locals)
+    flag_locals: Option<[WasmLocal; 5]>,
+    pending_flag_stores: Vec<u32>,
 }
+
+// addresses of the lazy flags in memory, in the order of flag_locals
+const FLAG_ADDRS: [u32; 5] = [96, 100, 104, 112, 120];
 
 #[derive(Eq, PartialEq)]
 pub struct WasmLocal(u8);
@@ -138,6 +147,8 @@ impl WasmBuilder {
             free_locals_i64: Vec::with_capacity(8),
             local_count: 0,
             arg_local_initial_state: WasmLocal(0),
+            flag_locals: None,
+            pending_flag_stores: Vec::new(),
         };
         b.init();
         b
@@ -168,6 +179,8 @@ impl WasmBuilder {
         self.instruction_body.clear();
         self.free_locals_i32.clear();
         self.free_locals_i64.clear();
+        self.flag_locals = None;
+        self.pending_flag_stores.clear();
         self.local_count = 0;
 
         dbg_assert!(self.label_to_depth.is_empty());
@@ -659,7 +672,79 @@ impl WasmBuilder {
         write_leb_i64(&mut self.instruction_body, v);
     }
 
+    fn flag_local_idx(&self, addr: u32) -> Option<u8> {
+        match &self.flag_locals {
+            None => None,
+            Some(l) => FLAG_ADDRS.iter().position(|&a| a == addr).map(|i| l[i].idx()),
+        }
+    }
+    pub fn has_flag_locals(&self) -> bool { self.flag_locals.is_some() }
+    pub fn enable_flag_locals(&mut self) {
+        dbg_assert!(self.flag_locals.is_none());
+        let l = [
+            self.alloc_local(),
+            self.alloc_local(),
+            self.alloc_local(),
+            self.alloc_local(),
+            self.alloc_local(),
+        ];
+        self.flag_locals = Some(l);
+        self.reload_flag_locals();
+    }
+    pub fn disable_flag_locals(&mut self) {
+        dbg_assert!(self.pending_flag_stores.is_empty());
+        if let Some(l) = self.flag_locals.take() {
+            for local in l {
+                self.free_local(local);
+            }
+        }
+    }
+    pub fn flush_flag_locals(&mut self) {
+        for i in 0..5 {
+            let idx = match &self.flag_locals {
+                Some(l) => l[i].idx(),
+                None => return,
+            };
+            self.const_i32(FLAG_ADDRS[i] as i32);
+            self.instruction_body.push(op::OP_GETLOCAL);
+            self.instruction_body.push(idx);
+            self.instruction_body.push(op::OP_I32STORE);
+            self.instruction_body.push(op::MEM_ALIGN32);
+            write_leb_u32(&mut self.instruction_body, 0);
+        }
+    }
+    pub fn reload_flag_locals(&mut self) {
+        for i in 0..5 {
+            let idx = match &self.flag_locals {
+                Some(l) => l[i].idx(),
+                None => return,
+            };
+            self.const_i32(FLAG_ADDRS[i] as i32);
+            self.load_aligned_i32(0);
+            self.instruction_body.push(op::OP_SETLOCAL);
+            self.instruction_body.push(idx);
+        }
+    }
+    /// The address of a lazy flag for a store_aligned_i32 that follows; with flag locals, the
+    /// store goes to the local
+    pub fn const_flag_addr(&mut self, addr: i32) {
+        if self.flag_local_idx(addr as u32).is_some() {
+            self.pending_flag_stores.push(addr as u32);
+        }
+        else {
+            self.const_i32(addr);
+        }
+    }
+
     pub fn load_fixed_u8(&mut self, addr: u32) {
+        if let Some(idx) = self.flag_local_idx(addr) {
+            self.instruction_body.push(op::OP_GETLOCAL);
+            self.instruction_body.push(idx);
+            self.const_i32(0xFF);
+            self.and_i32();
+            return;
+        }
+        dbg_assert!(!self.has_flag_locals() || !(96..124).contains(&addr));
         self.const_i32(addr as i32);
         self.load_u8(0);
     }
@@ -667,6 +752,14 @@ impl WasmBuilder {
         // doesn't cause a failure in the generated code, but it will be much slower
         dbg_assert!((addr & 1) == 0);
 
+        if let Some(idx) = self.flag_local_idx(addr) {
+            self.instruction_body.push(op::OP_GETLOCAL);
+            self.instruction_body.push(idx);
+            self.const_i32(0xFFFF);
+            self.and_i32();
+            return;
+        }
+        dbg_assert!(!self.has_flag_locals() || !(96..124).contains(&addr));
         self.const_i32(addr as i32);
         self.instruction_body.push(op::OP_I32LOAD16U);
         self.instruction_body.push(op::MEM_ALIGN16);
@@ -676,12 +769,19 @@ impl WasmBuilder {
         // doesn't cause a failure in the generated code, but it will be much slower
         dbg_assert!((addr & 3) == 0);
 
+        if let Some(idx) = self.flag_local_idx(addr) {
+            self.instruction_body.push(op::OP_GETLOCAL);
+            self.instruction_body.push(idx);
+            return;
+        }
+        dbg_assert!(!self.has_flag_locals() || !(96..124).contains(&addr));
         self.const_i32(addr as i32);
         self.load_aligned_i32(0);
     }
     pub fn load_fixed_i64(&mut self, addr: u32) {
         // doesn't cause a failure in the generated code, but it will be much slower
         dbg_assert!((addr & 7) == 0);
+        dbg_assert!(!self.has_flag_locals() || !(96..124).contains(&addr));
 
         self.const_i32(addr as i32);
         self.load_aligned_i64(0);
@@ -754,12 +854,20 @@ impl WasmBuilder {
     }
 
     pub fn store_aligned_i32(&mut self, byte_offset: u32) {
+        if let Some(addr) = self.pending_flag_stores.pop() {
+            dbg_assert!(byte_offset == 0);
+            let idx = self.flag_local_idx(addr).unwrap();
+            self.instruction_body.push(op::OP_SETLOCAL);
+            self.instruction_body.push(idx);
+            return;
+        }
         self.instruction_body.push(op::OP_I32STORE);
         self.instruction_body.push(op::MEM_ALIGN32);
         write_leb_u32(&mut self.instruction_body, byte_offset);
     }
 
     pub fn store_aligned_i64(&mut self, byte_offset: u32) {
+        dbg_assert!(self.pending_flag_stores.is_empty());
         self.instruction_body.push(op::OP_I64STORE);
         self.instruction_body.push(op::MEM_ALIGN64);
         write_leb_u32(&mut self.instruction_body, byte_offset);
@@ -987,8 +1095,11 @@ impl WasmBuilder {
 
     fn call_fn(&mut self, name: &str, function: FunctionType) {
         let i = self.get_fn_idx(name, function);
+        // helpers read and write the lazy flags in memory
+        self.flush_flag_locals();
         self.instruction_body.push(op::OP_CALL);
         write_leb_u32(&mut self.instruction_body, i as u32);
+        self.reload_flag_locals();
     }
 
     pub fn call_fn0(&mut self, name: &str) { self.call_fn(name, FunctionType::FN0) }
