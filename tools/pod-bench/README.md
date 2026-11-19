@@ -102,5 +102,12 @@ instructions (32-bit counter: wraps for spring). Run-to-run noise is about
 - `ab.sh <workload> <reps> <dirA> <dirB>`: alternating runs of two builds
 - `BENCH_DATA`, `VMDIR`, `TABERNETES_SRC`: other locations of the data
 
+`chromium/`: the same in headless Chromium. `node chromium/server.cjs <vmdir>` serves the
+checkout and a directory with `vmlinux`, `init`, `state.bin` (`STATE_FILE`) and `kjit.bin`
+(`KJIT_FILE`); `NODE_PATH=$(npm root -g) node chromium/run.cjs nginx 8 3 build:4=750000 build`
+runs alternating variants (a build directory, optionally with `JITCFG`), each in a new browser:
+one worker warms up (`PREWARM=init`, 100 kernel modules warmed) and runs the rounds; round 0
+is the first pod of a tab.
+
 `core.mjs` has no Node.js dependencies: it also runs in a browser worker
 (pass `read`, `mods`, `v86dir` and `log` to `run`).

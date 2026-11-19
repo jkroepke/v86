@@ -594,7 +594,8 @@ connections into the guest with `network_adapter.connect(port)`. `net` of
   / 2070 ms; cpu 5860 / 10420 ms -> 5980 / 9230 ms, glibc 5870 / 15200 ms ->
   5730 / 11850 ms. spring (one round each): 87.4 / 161.5 s -> 84.6 /
   137.2 s. In headless Chromium nginx answers after 0.79 s instead of
-  1.39 s. If modules get cheaper to compile, measure the threshold again.
+  1.39 s. If modules get cheaper to compile, measure the threshold again
+  (done 2026-11-19: 200k, see the end of this list).
 - Cold blocks (2026-11-13): JIT modules contain only the blocks that the
   interpreter reached through a conditional jump before the page got hot
   (marks per page in `jit.rs`, a pool of 4096 slots of 512 bytes; a page
@@ -655,5 +656,29 @@ connections into the guest with `network_adapter.connect(port)`. `net` of
 - Network hooks for embedders (2026-11-15, see the section above):
   `claim_tcp`, `dns_resolver`, `arp_subnet`, `connect(port, src_ip)`,
   `TCPConnection.reset()`; DNS answers from the asked address.
+- JIT threshold 750k -> 200k (2026-11-19). 750k was chosen on 2026-11-13,
+  before cold blocks, bails, the kernel JIT modules and the warm-up of the
+  first pod, and measured with rounds in one process. Those rounds share
+  compiled code: V8 keeps a native module cache by the bytes of a module,
+  and the same image in the same VM state makes the same modules, so a
+  later round gets the Liftoff and TurboFan code of the round before
+  (`node --no-wasm-native-module-cache-enabled`: nginx later rounds 437 ->
+  538 ms at 750k). Chrome has one such cache per renderer process, so later
+  pods of a tab get it too, but the first pod of a tab does not. Measured
+  as the first pod of a new Node.js process like the first pod of a tab
+  (`STATE_FILE`, `KJIT` 100 modules with `KJIT_WARM=3000`, `PREWARM=init`,
+  `READINTO=1`), medians of alternating runs, wall time 750k / 400k / 300k /
+  200k / 100k: goapp 1119 / 1083 / 1015 / 962 / 914 ms (4 runs), glibc 3275
+  / 3083 / 3036 / 2981 / 3000 ms (3), cpu 4558 / - / 4187 / - / 3927 ms (3),
+  nginx 454 / 445 / 428 / 439 / 471 ms (6, noise), spring 35.6 / - / 32.5 /
+  33.0 / 33.6 s (3). Process CPU: goapp 1.87 -> 2.34 s, nginx 1.27 -> 1.49 s,
+  glibc 4.9 -> 5.1 s, spring 47.0 -> 50.0 s at 200k. goapp in the steady
+  state (`STEADY=1 WARM=200 REQS=300`, 3 runs): 11.9 -> 10.9 ms per scrape.
+  Headless Chromium (`tools/pod-bench/chromium`, a new browser per run,
+  `PREWARM=init`, 100 kernel modules, first pod / later pods): nginx 467 /
+  371 -> 477 / 363 ms (8 runs, noise), goapp 1205 / 1034 -> 1124 / 903 ms
+  (8), glibc 3532 / 3304 -> 3344 / 3207 ms (4), cpu 4648 / 4564 -> 4143 /
+  4257 ms (4). Code that runs more often than a few hundred times per page
+  pays for its compile now; the cost is TurboFan on other threads.
 
 Work in progress lives on `wip/*` and `codex/*` branches.

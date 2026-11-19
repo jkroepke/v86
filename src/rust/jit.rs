@@ -192,7 +192,7 @@ pub static mut MAX_EXTRA_BASIC_BLOCKS: u32 = 250;
 // little on the main thread, but V8 then optimises it on a background thread (~40 ms of CPU for
 // a page), which is as much as the interpreter needs for ~3 million instructions. With 200k,
 // the start of nginx spent 2 s of CPU on modules that it hardly ran (see AGENTS.md).
-pub static mut JIT_THRESHOLD: u32 = 750 * 1000;
+pub static mut JIT_THRESHOLD: u32 = 200 * 1000;
 
 // less branches will generate if-else, more will generate brtable
 pub const BRTABLE_CUTOFF: usize = 10;
