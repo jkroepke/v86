@@ -1,0 +1,15 @@
+<!doctype html><meta charset="utf-8"><script type="module">
+// one tab: v86.wasm compiled once, one worker runs PREWARM=init and then <rounds> pods (round 0 = first pod of a tab)
+const q = new URLSearchParams(location.search);
+const wl = q.get("wl") || "nginx", rounds = Number(q.get("rounds") || 3);
+const B = "/tools/pod-bench";
+const get = async (u) => new Uint8Array(await (await fetch(u)).arrayBuffer());
+const module = await WebAssembly.compileStreaming(fetch(`/${q.get("build") || "build"}/v86.wasm`));
+const img = { nginx: "nginx.tar", goapp: "goapp.tar", glibc: "nginx.tar", cpu: "alpine.tar", warm: "alpine.tar" }[wl];
+const [vmlinux, init, tar, state, kjit] = await Promise.all([get("/vm/vmlinux"), get("/vm/init"), get(`${B}/data/${img}`), get("/vm/state.bin"), get("/vm/kjit.bin")]);
+const w = new Worker(`${B}/chromium/worker.mjs`, { type: "module" });
+w.onmessage = ({ data }) => { if (data.progress) console.log(data.progress); else window.result = data; };
+w.onerror = (e) => { window.result = { error: e.message }; };
+w.postMessage({ module, wl, rounds, build: q.get("build") || "build", jitcfg: q.get("jitcfg") || undefined, nokjit: q.has("nokjit"),
+  state: state.buffer, kjit: kjit.buffer, files: { vmlinux: vmlinux.buffer, init: init.buffer, [img]: tar.buffer } });
+</script>
