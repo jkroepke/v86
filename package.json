@@ -1,6 +1,6 @@
 {
   "name": "v86",
-  "version": "0.5.5101-fork.73109de49e19",
+  "version": "0.5.52-fork.c7e2006754e4",
   "license": "BSD-2-Clause",
   "description": "x86 PC emulator and x86-to-wasm JIT, running in the browser",
   "homepage": "https://copy.sh/v86/",
