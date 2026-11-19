@@ -682,3 +682,25 @@ connections into the guest with `network_adapter.connect(port)`. `net` of
   pays for its compile now; the cost is TurboFan on other threads.
 
 Work in progress lives on `wip/*` and `codex/*` branches.
+
+## Tried on 2026-11-19 (not merged; code on branch `claude/project-thread-06jcpw`)
+
+- wasm-opt on v86.wasm (binaryen 123, `-O2` / `-O3`): 2.09 -> 1.72 / 1.70 MB, but the
+  JIT-bound cpu workload got slower (first pod of a fresh process, medians of 3: 3969 ->
+  4676 / 4622 ms); nginx 509 -> 464 / 468 ms (6 runs, noise), goapp and glibc noise.
+  `dist.sh` keeps building without wasm-opt.
+- Lazy flags in wasm locals inside a JIT module (last_op_size, flags_changed,
+  last_op1, last_result, flags; written to memory before helper calls and at exits,
+  `set_jit_config(12, n)` on the branch). They were 65 % of the stores of the JIT
+  modules of an nginx start (87k of 133k, static), against 3k helper calls. Same build
+  on / off, Node.js, medians: first pod nginx 506 / 500 ms, goapp 1041 / 1120 ms,
+  glibc 3205 / 3041 ms, cpu 3880 / 3922 ms; steady goapp 11.6-12.1 / 11.5-11.9 ms per
+  scrape, loop 918-1000 / 978-1013 ms per tick. The stores are off the critical path;
+  nasmtests passed with it.
+- JIT modules of shared libraries installed by page content (ld.so and libc are 88 %
+  of the user instructions of an nginx start, 11.8M of them interpreted): modules
+  recorded from a generic Debian script, installed when the interpreter first enters a
+  page with the same bytes. nginx first pod 517 -> 423 ms (8 runs); goapp noise. Not
+  kept: shipping modules per distribution and libc version does not scale (Joe). The
+  same mechanism within one tab would only help later pods.
+
