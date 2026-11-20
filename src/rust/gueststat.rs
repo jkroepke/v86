@@ -70,6 +70,52 @@ static mut KHIST: [u32; KBUCKETS * N] = [0; KBUCKETS * N];
 // Sampled user pages (virtual page number -> samples)
 static mut UHIST: [u32; 0x100000 * N] = [0; 0x100000 * N];
 
+// Kernel stacks of the samples (EBP chain of a kernel with frame pointers): STACK_DEPTH
+// return addresses per sample, 0 ends a stack
+const STACK_DEPTH: usize = 24;
+const STACKS: usize = 1 << 16;
+static mut STACK: [u32; STACKS * STACK_DEPTH * N] = [0; STACKS * STACK_DEPTH * N];
+static mut NSTACKS: usize = 0;
+
+unsafe fn sample_stack(eip: i32) {
+    if NSTACKS >= STACKS {
+        return;
+    }
+    use crate::cpu::global_pointers::{memory_size, reg32};
+    let s = &mut STACK[NSTACKS * STACK_DEPTH..(NSTACKS + 1) * STACK_DEPTH];
+    NSTACKS += 1;
+    s[0] = match CAUSE {
+        G::INSTR_KERNEL_SYSCALL => CAUSE_SYSCALL as u32,
+        G::INSTR_KERNEL_PAGE_FAULT => 1000,
+        G::INSTR_KERNEL_IRQ => 1001,
+        _ => 1002,
+    };
+    s[1] = eip as u32;
+    let mut fp = *reg32.offset(5) as u32;
+    let mut d = 2;
+    while d < STACK_DEPTH {
+        let phys = fp.wrapping_sub(0xc000_0000);
+        if fp < 0xc000_0000 || phys + 8 > *memory_size || fp & 3 != 0 {
+            break;
+        }
+        let m = crate::cpu::memory::mem8;
+        let next = (m.add(phys as usize) as *const u32).read_unaligned();
+        let ret = (m.add(phys as usize + 4) as *const u32).read_unaligned();
+        if ret < KTEXT || ret >= KTEXT + (16 << 20) {
+            break;
+        }
+        s[d] = ret;
+        d += 1;
+        if next <= fp {
+            break;
+        }
+        fp = next;
+    }
+    if d < STACK_DEPTH {
+        s[d] = 0;
+    }
+}
+
 // Kernel call edges (call rel, call through a register or memory, jmp rel), recorded by the
 // interpreter: open addressing, key (caller - KTEXT) << 24 | (target - KTEXT), plus one
 const EDGES: usize = 1 << 17;
@@ -156,6 +202,7 @@ pub fn block(cpl: u8, eip: i32, count: u32, jit: bool) {
                 if i < KBUCKETS {
                     COUNTERS[G::SAMPLES_KERNEL as usize] += 1.0;
                     KHIST[i] += 1;
+                    sample_stack(eip);
                 }
                 else {
                     COUNTERS[G::SAMPLES_KERNEL_OUTSIDE as usize] += 1.0;
@@ -279,6 +326,7 @@ pub fn gueststat_get(kind: u32, index: u32) -> f64 {
             7 if i < UHIST.len() => UHIST[i] as f64,
             8 if i < EKEYS.len() => EKEYS[i] as f64,
             9 if i < ECNT.len() => ECNT[i] as f64,
+            10 if i < NSTACKS * STACK_DEPTH => STACK[i] as f64,
             _ => -1.0,
         }
     }
@@ -300,6 +348,7 @@ pub fn gueststat_reset() {
         UHIST.iter_mut().for_each(|x| *x = 0);
         EKEYS.iter_mut().for_each(|x| *x = 0);
         ECNT.iter_mut().for_each(|x| *x = 0);
+        NSTACKS = 0;
         TIME_LAST = 0.0;
     }
 }

@@ -281,6 +281,9 @@ const pct = (a, p) => a.slice().sort((x, y) => x - y)[Math.min(a.length - 1, Mat
 async function pod(state, wl, rec) {
   const [img, c] = confs()[wl];
   const conf = { ...c, user: "", hostname: "bench", ip: IP, gateway: GATEWAY, stdin: false, stdinOnce: false, tty: false };
+  // init of tabernetes 1.24+ (pod sandbox) reads containers and start; older ones the fields above
+  conf.containers = [{ name: "c", root: "/", args: c.args, env: c.env, cwd: c.cwd, user: "", stdin: false, stdinOnce: false, tty: false, console: true }];
+  conf.start = ["0"];
   const tc = performance.now();
   const e = new V86(options());
   await new Promise((r) => e.add_listener("emulator-loaded", r));
@@ -304,7 +307,7 @@ async function pod(state, wl, rec) {
   const t0 = performance.now();
   e.run();
   e.serial_send_bytes(1, new TextEncoder().encode(`go ${Date.now()} ${"ab".repeat(32)}\n`));
-  await until("started", () => control.includes("started") || control.some((l) => l.startsWith("exit")));
+  await until("started", () => control.some((l) => l === "started" || l.startsWith("started ")) || control.some((l) => l.startsWith("exit")));
   const r = { ...r0, started: performance.now() - t0, restore: restoreMs };
   try {
     if (wl === "net") {
@@ -363,7 +366,7 @@ async function pod(state, wl, rec) {
     // counters of src/rust/gueststat.rs; the arrays as [index, value] pairs
     const g = cpu.wm.exports.gueststat_get;
     const arr = (kind, n) => { const out = []; for (let i = 0; i < n; i++) { const v = g(kind, i); if (v) out.push([i, v]); } return out; };
-    O.gstatOut({ names: O.gstat, counters: O.gstat.map((_, i) => g(0, i)), vectors: arr(1, 256), syscalls: arr(2, 512), syscallInstr: arr(3, 512), portReads: arr(4, 65536), portWrites: arr(5, 65536), khist: arr(6, 1 << 20), uhist: arr(7, 1 << 20), ekeys: arr(8, 1 << 17), ecnt: arr(9, 1 << 17), wallMs: r.done, cpuMs: r.cpu });
+    O.gstatOut({ names: O.gstat, counters: O.gstat.map((_, i) => g(0, i)), vectors: arr(1, 256), syscalls: arr(2, 512), syscallInstr: arr(3, 512), portReads: arr(4, 65536), portWrites: arr(5, 65536), khist: arr(6, 1 << 20), uhist: arr(7, 1 << 20), ekeys: arr(8, 1 << 17), ecnt: arr(9, 1 << 17), stacks: (() => { const a = []; for (let i = 0; ; i++) { const v = g(10, i); if (v < 0) break; a.push(v); } return a; })(), wallMs: r.done, cpuMs: r.cpu });
   }
   if (rec) rec.out = e.jit_export(O.kjitTop);
   await e.destroy();

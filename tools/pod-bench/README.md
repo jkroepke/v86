@@ -89,6 +89,13 @@ instructions (32-bit counter: wraps for spring). Run-to-run noise is about
 - `READINTO=1`: the image layers answer reads synchronously, like the OPFS sync access
   handles of tabernetes; without it, the first read of each file waits for a promise (the
   guest idles)
+- `stacks.cjs x.json System.map [function]`: an inclusive profile of the kernel from the
+  `GSTAT` recording: each kernel sample also records the EBP chain of the kernel (frame
+  pointers, the default of the i386 tinyconfig). `CAUSE=#PF` (or `sys252`, `irq`) keeps the
+  samples of one cause of the kernel entry, `SELF=n` lists the self time too; with a function
+  it lists its callers and callees
+- `calls.cjs x.json System.map function...`: how often the interpreter called these kernel
+  functions, by caller (record with the JIT off, `JITCFG=4=2000000000`)
 - `kpages.cjs System.map x.json...`: on how many kernel pages 50/90/99 % of the kernel
   instructions of a GSTAT recording ran, against an ideal order; checks `korder.cjs`
 - `korder.cjs`: an order of the kernel functions for `ld.lld --symbol-ordering-file`, so that

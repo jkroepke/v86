@@ -681,6 +681,16 @@ connections into the guest with `network_adapter.connect(port)`. `net` of
   4257 ms (4). Code that runs more often than a few hundred times per page
   pays for its compile now; the cost is TurboFan on other threads.
 
+- virtio honours `VIRTIO_F_RING_EVENT_IDX` (2026-11-20): `flush_replies` raised the
+  interrupt for every answer (upstream: "workaround for sometimes loading from the
+  filesystem hangs"); it now asks `vring_need_event()` of the spec. tabernetes kicks 9p
+  with the callback off and collects the answer after the notify (its
+  `9p-virtio-no-irq.patch`): nginx start 660 -> 43 virtio interrupts. No hang in the
+  pod-bench workloads (nginx, goapp, glibc, cpu, warm, net), with synchronous and
+  asynchronous 9p reads; the Linux drivers of 9p and net use the event index correctly.
+- `gueststat` samples the EBP chain of the kernel with every kernel sample (kind 10 of
+  `gueststat_get`), `tools/pod-bench/stacks.cjs` makes an inclusive profile from it.
+
 Work in progress lives on `wip/*` and `codex/*` branches.
 
 ## Tried on 2026-11-19 (not merged; code on branch `claude/project-thread-06jcpw`)

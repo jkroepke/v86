@@ -1220,18 +1220,10 @@ VirtQueue.prototype.flush_replies = function()
     {
         const used_event = this.avail_get_used_event();
 
-        // Fire irq when idx values associated with the pushed reply buffers
-        // has reached or gone past used_event.
-        let has_passed = old_idx <= used_event && used_event < new_idx;
-
-        // Has overflowed? Assumes num_staged_replies > 0.
-        if(new_idx <= old_idx)
-        {
-            has_passed = used_event < new_idx || old_idx <= used_event;
-        }
-
-        // Commented out: Workaround for sometimes loading from the filesystem hangs and the emulator stays idle
-        //if(has_passed)
+        // Fire the irq only when the driver asked for it: vring_need_event()
+        // of the virtio spec. A driver that disabled its callback (it
+        // collects the answers itself right after the notify) gets none.
+        if(((new_idx - used_event - 1) & VIRTQ_IDX_MASK) < ((new_idx - old_idx) & VIRTQ_IDX_MASK))
         {
             this.virtio.raise_irq(VIRTIO_ISR_QUEUE);
         }
